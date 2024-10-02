@@ -123,9 +123,9 @@ size_t
 threads_ready (void)
 {
   enum intr_level old_level = intr_disable ();
-  return list_size (&ready_list);
+  size_t ready_thread_count = list_size (&ready_list);
   intr_set_level (old_level);
-  
+  return ready_thread_count;
 }
 
 /* Called by the timer interrupt handler at each timer tick.
