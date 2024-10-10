@@ -7,6 +7,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include <debug.h>
+#include <locale.h>
 #include <random.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -78,7 +79,6 @@ static tid_t allocate_tid (void);
 
 // TODO: 
 static int thread_compute_load_avg (void);
-static int thread_compute_nice (void);
 static int thread_compute_recent_cpu (void);
 static int thread_compute_BSD_priority (void);
 
@@ -153,16 +153,19 @@ thread_tick (void)
   /* Update statistics. */
   if (t == idle_thread)
     idle_ticks++;
+  else
+    t->recent_cpu++; /* Increment recent_cpu by 1 */
+
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
 #endif
   else
     kernel_ticks++;
-
+    
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();
+    intr_yield_on_return ();  
 }
 
 /* Prints thread statistics. */
@@ -399,14 +402,16 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int new_nice)
 {
-  // TODO: 
-  thread_current()->nice = nice;
+  ASSERT (new_nice >= -20 && new_nice <= 20);
+  struct thread *t = thread_current ();
+  t->nice = new_nice;
 
-  // Round down
-  int new_priority = PRI_MAX - (thread_get_recent_cpu() / 4) - (nice * 2);
-  thread_set_priority(new_priority);
+  /* Recalculates the thread’s priority based on the new value */
+  int new_priority = thread_compute_BSD_priority (); 
+
+  thread_set_priority (new_priority);
 }
 
 /* Returns the current thread's nice value. */
@@ -432,7 +437,7 @@ thread_get_recent_cpu (void)
 
 static 
 int 
-thread_compute_load_avg () {
+thread_compute_load_avg (void) {
   // timer_ticks () % TIMER_FREQ == 0
 
   int ready_threads = threads_ready();
@@ -443,24 +448,26 @@ thread_compute_load_avg () {
 
 static 
 int 
-thread_compute_nice () {
-
+thread_compute_recent_cpu (void) {
+  // timer_ticks () % TIMER_FREQ == 0
+  // We recommend computing the coefficient of recent cpu first, then multiplying.
+  struct thread *t = thread_current ();
+  int new_recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice;
+  
+  return new_recent_cpu;
 }
 
 static 
 int 
-thread_compute_recent_cpu () {
-
-}
-
-static 
-int 
-thread_compute_BSD_priority () {
+thread_compute_BSD_priority (void) {
   struct thread *t = thread_current ();
 
-  int priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
-  ASSERT (priority >= PRI_MIN && priority <= PRI_MAX);
+  // Round down
   // It is also recalculated for each thread (if necessary) on every fourth clock tick
+  int new_priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
+  ASSERT (priority >= PRI_MIN && priority <= PRI_MAX);
+  
+  return new_priority;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
