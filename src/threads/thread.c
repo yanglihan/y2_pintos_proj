@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "thread.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -50,6 +51,8 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+static int load_avg;  /* Estimates the average number of threads ready to run over the past minute */
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -70,6 +73,13 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+
+// TODO: 
+static int thread_compute_load_avg (void);
+static int thread_compute_nice (void);
+static int thread_compute_recent_cpu (void);
+static int thread_compute_BSD_priority (void);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -98,6 +108,10 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  load_avg = 0;
+  thread_current ()->nice = 0;
+  thread_current ()->recent_cpu = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -368,31 +382,66 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  // TODO: 
+  thread_current()->nice = nice;
+
+  // Round down
+  int new_priority = PRI_MAX - (thread_get_recent_cpu() / 4) - (nice * 2);
+  thread_set_priority(new_priority);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return 100 * load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return 100 * thread_current()->recent_cpu;
+}
+
+static 
+int 
+thread_compute_load_avg () {
+  // timer_ticks () % TIMER_FREQ == 0
+
+  int ready_threads = threads_ready();
+  load_avg = (59 / 60) * load_avg + (1 / 60) * ready_threads;
+
+  return load_avg;
+}
+
+static 
+int 
+thread_compute_nice () {
+
+}
+
+static 
+int 
+thread_compute_recent_cpu () {
+
+}
+
+static 
+int 
+thread_compute_BSD_priority () {
+  struct thread *t = thread_current ();
+
+  int priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
+  ASSERT (priority >= PRI_MIN && priority <= PRI_MAX);
+  // It is also recalculated for each thread (if necessary) on every fourth clock tick
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
