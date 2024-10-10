@@ -20,7 +20,6 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
-static int load_avg;
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -50,6 +49,11 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+
+static int load_avg;  /* Estimates the average number of threads ready to run over the past minute */
+
+
+
 
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
@@ -389,12 +393,14 @@ get_highest_priority_thread (struct list *thread_list)
 void
 thread_set_priority (int new_priority)
 {
+  thread_current ()->base_priority = new_priority;
+  if (thread_current ()->base_priority > thread_current ()->priority)
+    thread_current ()->priority = thread_current ()->base_priority;
+
   struct thread *highest_priority_thread;
   highest_priority_thread = list_entry (list_max (&ready_list, 
                                                   &thread_compare_priority, 0),
                                         struct thread, elem);
-
-  thread_current ()->priority = new_priority;
 
   if (thread_current ()->priority < highest_priority_thread->priority)
     thread_yield ();
@@ -557,6 +563,9 @@ init_thread (struct thread *t, const char *name, int priority)
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
+
+  /* Initialize priority donations. */
+  list_init (&t->donations);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
