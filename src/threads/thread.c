@@ -61,6 +61,9 @@ bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
 
+static bool
+thread_compare_priority (struct list_elem *a, struct list_elem *b,
+                         void *aux UNUSED);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -350,11 +353,29 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Compares priorities, returns true if a.priority < b.priority. */
+static bool
+thread_compare_priority (struct list_elem *a, struct list_elem *b,
+                         void *aux UNUSED)
+{
+  return list_entry (a, struct thread, elem)->priority
+         < list_entry (b, struct thread, elem)->priority;
+}
+
+/* Sets the current thread's priority to NEW_PRIORITY, and yields if the new
+   priority is lower than the higherst priority in the ready list. */
 void
 thread_set_priority (int new_priority) 
 {
+  struct thread *highest_priority_thread;
+  highest_priority_thread = list_entry (list_max (&ready_list, 
+                                                  &thread_compare_priority, 0),
+                                        struct thread, elem);
+
   thread_current ()->priority = new_priority;
+  
+  if (thread_current ()->priority < highest_priority_thread->priority)
+      thread_yield ();
 }
 
 /* Returns the current thread's priority. */
