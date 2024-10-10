@@ -24,14 +24,6 @@ static int64_t ticks;
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
 
-/* Info for a sleeping thread. */
-static struct sleeper
-{
-  struct list_elem elem;
-  int64_t sleep_until;        /* Ticks until which this thread should sleep. */
-  struct semaphore sema;
-};
-
 /* List of sleepers. */
 static struct list sleepers;
 
