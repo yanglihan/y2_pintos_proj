@@ -152,16 +152,20 @@ thread_tick (void)
 
   /* Update statistics. */
   if (t == idle_thread)
-    idle_ticks++;
-  else
-    t->recent_cpu++; /* Increment recent_cpu by 1 */
+    {
+      idle_ticks++;
+    }
 
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
 #endif
-  else
+  else 
+  {
     kernel_ticks++;
+    t->recent_cpu++; /* Increment recent_cpu by 1 */
+  }
+    
     
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
