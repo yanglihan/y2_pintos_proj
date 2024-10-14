@@ -1,4 +1,5 @@
 #include "threads/thread.h"
+#include "threads/fixed-point.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -163,7 +164,7 @@ thread_tick (void)
   else 
   {
     kernel_ticks++;
-    t->recent_cpu++; /* Increment recent_cpu by 1 */
+    t->recent_cpu++;  /* Increment recent_cpu by 1 */
   }
     
     
@@ -443,7 +444,6 @@ static
 int 
 thread_compute_load_avg (void) {
   // timer_ticks () % TIMER_FREQ == 0
-
   int ready_threads = threads_ready();
   load_avg = (59 / 60) * load_avg + (1 / 60) * ready_threads;
 
@@ -456,6 +456,7 @@ thread_compute_recent_cpu (void) {
   // timer_ticks () % TIMER_FREQ == 0
   // We recommend computing the coefficient of recent cpu first, then multiplying.
   struct thread *t = thread_current ();
+  
   int new_recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice;
   
   return new_recent_cpu;
