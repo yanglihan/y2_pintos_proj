@@ -7,6 +7,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 #include <debug.h>
 #include <locale.h>
 #include <random.h>
@@ -144,6 +145,18 @@ threads_ready (void)
   return ready_thread_count;
 }
 
+/* Returns the number of threads ready or running, idle_thread does not count. */
+size_t
+threads_ready_or_running (void)
+{
+  size_t total = 0;
+  total += threads_ready ();
+  if (thread_current () != idle_thread)
+    total++;
+  
+  return total;
+}
+
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
@@ -166,7 +179,6 @@ thread_tick (void)
     kernel_ticks++;
     t->recent_cpu++;  /* Increment recent_cpu by 1 */
   }
-    
     
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -451,15 +463,13 @@ thread_compute_load_avg (void) {
 }
 
 static 
-int 
-thread_compute_recent_cpu (void) {
+void 
+thread_compute_recent_cpu (struct thread *t) {
   // timer_ticks () % TIMER_FREQ == 0
-  // We recommend computing the coefficient of recent cpu first, then multiplying.
-  struct thread *t = thread_current ();
-  
-  int new_recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice;
-  
-  return new_recent_cpu;
+  // We recommend computing the coefficient of recent cpu first, then multiplying.  
+  int new_recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * t->recent_cpu + t->nice;
+  // use thread for each
+  t->recent_cpu = new_recent_cpu;
 }
 
 static 
@@ -470,7 +480,8 @@ thread_compute_BSD_priority (void) {
   // Round down
   // It is also recalculated for each thread (if necessary) on every fourth clock tick
   int new_priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice * 2);
-  ASSERT (priority >= PRI_MIN && priority <= PRI_MAX);
+  
+  ASSERT (t->priority >= PRI_MIN && t->priority <= PRI_MAX);
   
   return new_priority;
 }
@@ -548,7 +559,7 @@ is_thread (struct thread *t)
 /* Does basic initialization of T as a blocked thread named
    NAME. */
 static void
-init_thread (struct thread *t, const char *name, int priority)
+init_thread (struct thread *t, const char *name, int priority, struct thread *parent)
 {
   enum intr_level old_level;
 
@@ -562,6 +573,21 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  /* Inherit nice value from its parent unless it is the initial thread */
+  if (thread_mlfqs)
+  {
+    if (parent == NULL)
+      {
+        t->nice = 0;
+        t->recent_cpu = 0;
+      }
+    else
+      {
+        t->nice = parent->nice;
+        t->priority = thread_compute_BSD_priority ();
+      }
+  }
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
