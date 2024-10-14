@@ -198,6 +198,7 @@ lock_acquire (struct lock *lock)
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  thread_current ()->sema = &lock->semaphore;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -233,6 +234,7 @@ lock_release (struct lock *lock)
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+  thread_current ()->sema = NULL;
 }
 
 /* Returns true if the current thread holds LOCK, false

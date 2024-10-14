@@ -52,9 +52,6 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 
 static int load_avg;  /* Estimates the average number of threads ready to run over the past minute */
 
-
-
-
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
@@ -69,6 +66,8 @@ static void kernel_thread (thread_func *, void *aux);
 static bool thread_compare_priority (const struct list_elem *a,
                                      const struct list_elem *b,
                                      void *aux UNUSED);
+static int thread_get_other_priority (struct thread *t);
+
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -78,7 +77,6 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
-
 
 // TODO: 
 static int thread_compute_load_avg (void);
@@ -374,11 +372,11 @@ static bool
 thread_compare_priority (const struct list_elem *a, const struct list_elem *b,
                          void *aux UNUSED)
 {
-  return list_entry (a, struct thread, elem)->priority
-         < list_entry (b, struct thread, elem)->priority;
+  return thread_get_other_priority (list_entry (a, struct thread, elem))
+         < thread_get_other_priority (list_entry (b, struct thread, elem));
 }
 
-/* Get the thread with highest priority in a given list*/
+/* Get the thread with highest priority in a given list. */
 struct thread *
 get_highest_priority_thread (struct list *thread_list)
 {
@@ -393,9 +391,7 @@ get_highest_priority_thread (struct list *thread_list)
 void
 thread_set_priority (int new_priority)
 {
-  thread_current ()->base_priority = new_priority;
-  if (thread_current ()->base_priority > thread_current ()->priority)
-    thread_current ()->priority = thread_current ()->base_priority;
+  thread_current ()->priority = new_priority;
 
   struct thread *highest_priority_thread;
   highest_priority_thread = list_entry (list_max (&ready_list, 
@@ -407,10 +403,30 @@ thread_set_priority (int new_priority)
 }
 
 /* Returns the current thread's priority. */
+static int
+thread_get_other_priority (struct thread *t)
+{
+  if (t->sema != NULL)
+    {
+      return t->priority;
+    }
+  else if (list_empty (&t->sema->waiters))
+    {
+      return t->priority;
+    }
+  else
+    {
+      return thread_get_other_priority (
+          list_entry (list_max (&t->sema->waiters, thread_compare_priority, 0),
+                      struct thread, elem));
+    }
+}
+
+/* Returns the current thread's priority. */
 int
 thread_get_priority (void)
-{
-  return thread_current ()->priority;
+{ 
+  return thread_get_other_priority (thread_current ());
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -564,8 +580,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
 
-  /* Initialize priority donations. */
-  list_init (&t->donations);
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;

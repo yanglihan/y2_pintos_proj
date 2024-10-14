@@ -92,7 +92,7 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
-    struct list donations;               /* List of threads donating priorities. */
+    struct semaphore *sema;             /* Semaphore this thread is occupying. */
     struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
