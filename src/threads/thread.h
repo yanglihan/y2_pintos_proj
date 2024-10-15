@@ -87,12 +87,13 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
+    int base_priority;                  /* Base priority.*/
     int priority;                       /* Priority. */
-    int base_priority;                  /* Priority without donations. */
     struct list_elem allelem;           /* List element for all threads list. */
+    struct list locks;                  /* List of locks held by the thread. */
+    struct lock *lock;                  /* The lock the thread is trying to acquire */
 
     /* Shared between thread.c and synch.c. */
-    struct semaphore *sema;             /* Semaphore this thread is occupying. */
     struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
@@ -102,10 +103,6 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-    int nice;        /* nice value, -20 <= nice <= 20 */
-    int recent_cpu;  /* The amount of CPU time a thread has received “recently” */
-
   };
 
 /* If false (default), use round-robin scheduler.
@@ -139,12 +136,14 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+int thread_update_priority (void);
 
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-struct thread * get_highest_priority_thread (struct list * thread_list);
+struct thread *get_highest_priority_thread(struct list *thread_list);
+struct thread *remove_highest_priority_thread(struct list *thread_list);
 
 #endif /* threads/thread.h */
