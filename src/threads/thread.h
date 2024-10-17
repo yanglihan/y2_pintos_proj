@@ -92,11 +92,13 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int base_priority;                  /* Base priority.*/
     int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list. */
+    struct list_elem allelem;           /* List element for all_list. */
     struct list locks;                  /* List of locks held by the thread. */
-    struct lock *lock;                  /* The lock the thread is trying to acquire */
+    struct lock *lock;                  /* The lock the thread is 
+                                           trying to acquire */
     int nice;                           /* nice value, -20 <= nice <= 20 */
-    fp recent_cpu;                      /* The amount of CPU time a thread has received “recently” */
+    fp recent_cpu;                      /* The amount of CPU time a thread 
+                                           has received “recently” */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -149,7 +151,11 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+/* Returns the highest priority thread in the current list of ready threads. */
 struct thread *get_highest_priority_thread(struct list *thread_list);
+
+/* Removes and returns the highest priority thread 
+   in the current list of ready threads. */
 struct thread *remove_highest_priority_thread(struct list *thread_list);
 
 #endif /* threads/thread.h */

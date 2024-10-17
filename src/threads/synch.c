@@ -114,6 +114,8 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
+  /* Implemented priority based semaphores.
+     Unblocks the highest priority thread for each sema_up (). */
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters))
     {
@@ -284,14 +286,7 @@ lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
-/* One semaphore in a list. */
-struct semaphore_elem
-{
-  struct list_elem elem;      /* List element. */
-  struct semaphore semaphore; /* This semaphore. */
-  int priority;
-};
-
+/* Compares function for an ordered list of semaphores based on priority. */
 static bool
 semaphore_elem_compare_priority (const struct list_elem *a,
                                  const struct list_elem *b, void *aux UNUSED)

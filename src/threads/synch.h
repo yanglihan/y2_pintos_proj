@@ -38,6 +38,14 @@ struct condition
     struct list waiters;        /* List of waiting semaphore_elems. */
   };
 
+/* One semaphore in a list above. */
+struct semaphore_elem
+{
+  struct list_elem elem;      /* List element. */
+  struct semaphore semaphore; /* This semaphore. */
+  int priority;               /* Priority of this semaphore. */
+};
+
 void cond_init (struct condition *);
 void cond_wait (struct condition *, struct lock *);
 void cond_signal (struct condition *, struct lock *);

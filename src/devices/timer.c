@@ -25,10 +25,10 @@ static int64_t ticks;
 static unsigned loops_per_tick;
 
 /* Info for a sleeping thread. */
-struct sleeper
+static struct sleeper
   {
     struct list_elem elem;
-    int64_t sleep_until;        /* Ticks until which this thread should sleep. */
+    int64_t sleep_until;        /* Ticks that this thread should sleep for. */
     struct semaphore sema;
   };
 
@@ -36,7 +36,11 @@ struct sleeper
 static struct list sleepers;
 
 static intr_handler_func timer_interrupt;
-static bool thread_compare_sleep_ticks (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
+/* Compare function to keep the list of sleepers ordered. */
+static bool thread_compare_sleep_ticks (const struct list_elem *a, 
+                                        const struct list_elem *b, 
+                                        void *aux UNUSED);
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
@@ -114,7 +118,8 @@ timer_sleep (int64_t ticks)
   sema_init (&sleeper.sema, 0);
 
   old_level = intr_disable ();
-  list_insert_ordered (&sleepers, &(sleeper.elem), &thread_compare_sleep_ticks, 0);
+  list_insert_ordered (&sleepers, &(sleeper.elem), 
+                                  &thread_compare_sleep_ticks, 0);
   intr_set_level (old_level);
 
   sema_down (&sleeper.sema);
@@ -122,7 +127,9 @@ timer_sleep (int64_t ticks)
 
 /* Compares two threads list elements according to sleep_until. */
 static bool
-thread_compare_sleep_ticks(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+thread_compare_sleep_ticks(const struct list_elem *a, 
+                           const struct list_elem *b, 
+                           void *aux UNUSED)
 {
   struct sleeper *ta = list_entry (a, struct sleeper, elem);
   struct sleeper *tb = list_entry (b, struct sleeper, elem);

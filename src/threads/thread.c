@@ -52,7 +52,8 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
-static fp load_avg;  /* Estimates the average number of threads ready to run over the past minute */
+/* Estimates the average number of threads ready to run in the past minute. */
+static fp load_avg;  
 
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
@@ -63,35 +64,36 @@ static unsigned thread_ticks; /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-mlfqs". */
 bool thread_mlfqs;
 
+/* Given code */
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
-static void init_thread (struct thread *, const char *name, int priority, struct thread *parent);
+/* Added parent parameter for mlfqs scheduling. */
+static void init_thread (struct thread *, const char *name, 
+                                          int priority, struct thread *parent);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-/* Compute the load avg, returns a signed 32 bit integer. */
+/* Computes the load avg, returns a signed 32 bit integer. */
 static void thread_compute_load_avg (void);
 
-/* Compute the recent cpu of a thread, used in thread_foreach (). */
+/* Computes the recent cpu of a thread, used in thread_foreach (). */
 static void thread_compute_recent_cpu (struct thread *t, void *aux UNUSED);
 
-/* Compute the priority for the BSD Scheduler, used in thread_foreach (). */
+/* Computes the priority for the BSD Scheduler, used in thread_foreach (). */
 static void thread_compute_BSD_priority (struct thread *t, void *aux UNUSED);
 
+/* Compares function for an ordered list of threads based on priority. */
 static bool thread_compare_priority (const struct list_elem *a,
                                      const struct list_elem *b,
                                      void *aux UNUSED);
 
-struct thread *get_highest_priority_thread (struct list *threads);
-
-struct thread *remove_highest_priority_thread (struct list *threads);
-
+/* Compares function for an ordered list of locks based on priority. */
 static bool lock_compare_priority (const struct list_elem *a,
                                    const struct list_elem *b,
                                    void *aux UNUSED);
@@ -154,7 +156,8 @@ threads_ready (void)
   return ready_thread_count;
 }
 
-/* Returns the number of threads ready or running, idle_thread does not count. */
+/* Returns the number of threads ready or running. 
+   idle_thread does not count. */
 static size_t
 threads_ready_or_running (void)
 {
@@ -197,7 +200,9 @@ thread_tick (void)
           /* Compute load_avg first. */
           thread_compute_load_avg ();
 
-          fp coeff = DIVIDE_FP_FP (MULTIPLY_FP_INT (load_avg, 2), ADD_FP_INT (MULTIPLY_FP_INT (load_avg, 2), 1));
+          fp coeff = DIVIDE_FP_FP (MULTIPLY_FP_INT (load_avg, 2), 
+                                   ADD_FP_INT (MULTIPLY_FP_INT (load_avg, 2),
+                                                               1));
 
           thread_foreach (thread_compute_recent_cpu, &coeff);
         }
@@ -218,7 +223,7 @@ thread_tick (void)
     intr_yield_on_return ();  
 }
 
-/* Prints thread statistics. */
+/* Prints thread statistics for debugging. */
 void
 thread_print_stats (void)
 {
@@ -376,7 +381,7 @@ thread_exit (void)
   process_exit ();
 #endif
 
-  /* Remove thread from all threads list, set our status to dying,
+  /* Removes thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
@@ -404,7 +409,7 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
-/* Invoke function 'func' on all threads, passing along 'aux'.
+/* Invokes function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
 thread_foreach (thread_action_func *func, void *aux)
@@ -494,13 +499,14 @@ thread_set_priority (int new_priority)
       thread_update_priority ();
       if (!list_empty (&ready_list))
         {
-          if (t->priority < get_highest_priority_thread (&ready_list)->priority)
+          if (t->priority < 
+              get_highest_priority_thread (&ready_list)->priority)
             thread_yield ();
         }
     }
 }
 
-/* Donate a temporary priority NEW_PRIORITY to another thread. */
+/* Donates a temporary priority NEW_PRIORITY to another thread. */
 void
 thread_donate_priority (struct thread *t, int new_priority)
 {
@@ -561,6 +567,7 @@ thread_get_recent_cpu (void)
   return TO_INT_ROUND_NEAREST (val);
 }
 
+/* Computes the current load average. */
 static 
 void 
 thread_compute_load_avg (void) {
@@ -568,9 +575,11 @@ thread_compute_load_avg (void) {
   fp f_59_60 = DIVIDE_FP_FP (TO_FP (59), TO_FP (60));
   fp f_1_60 = DIVIDE_FP_FP (TO_FP (1), TO_FP (60));
 
-  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
+  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), 
+                        MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
 }
 
+/* Computes the cpu time recently received by thread t. */
 static 
 void 
 thread_compute_recent_cpu (struct thread *t, void *aux) {
@@ -582,13 +591,16 @@ thread_compute_recent_cpu (struct thread *t, void *aux) {
   t->recent_cpu = ADD_FP_INT (MULTIPLY_FP_FP (coeff, t->recent_cpu), t->nice);
 }
 
+/* Computes the BSD priority for a given thread. */
 static 
 void 
 thread_compute_BSD_priority (struct thread *t, void *aux UNUSED) {
-  if (t == idle_thread)
+  if (t == idle_thread) 
     return;
 
-  fp new_priority = SUBTRACT_FP_INT (SUBTRACT_FP_FP (TO_FP (PRI_MAX), DIVIDE_FP_INT (t->recent_cpu, 4)), (t->nice * 2));
+  fp new_priority = SUBTRACT_FP_INT (SUBTRACT_FP_FP (TO_FP (PRI_MAX), 
+                                     DIVIDE_FP_INT (t->recent_cpu, 4)), 
+                                                   (t->nice * 2));
 
   t->priority = TO_INT_ROUND_DOWN (new_priority);
 
@@ -672,10 +684,10 @@ is_thread (struct thread *t)
   return t != NULL && t->magic == THREAD_MAGIC;
 }
 
-/* Does basic initialization of T as a blocked thread named
-   NAME. */
+/* Does basic initialization of T as a blocked thread named NAME. */
 static void
-init_thread (struct thread *t, const char *name, int priority, struct thread *parent)
+init_thread (struct thread *t, const char *name, int priority, 
+                                                 struct thread *parent)
 {
   enum intr_level old_level;
 
