@@ -14,6 +14,9 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+/* Fixed-point type, which is signed 32-bit integer */
+typedef int32_t fp;
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -103,6 +106,10 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+    int nice;        /* nice value, -20 <= nice <= 20 */
+    fp recent_cpu;  /* The amount of CPU time a thread has received “recently” */
+
   };
 
 /* If false (default), use round-robin scheduler.
