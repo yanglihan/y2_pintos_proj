@@ -1,6 +1,3 @@
-// convert real number into p.q by * f, f = 2^q
-// convert fixed-point back to int, / f
-
 #define Q 14
 
 #define F (1 << Q)
