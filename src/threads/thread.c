@@ -76,13 +76,13 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
 /* Compute the load avg, returns a signed 32 bit integer. */
-static fp thread_compute_load_avg (void);
+static void thread_compute_load_avg (void);
 
-/* Compute the recent cpu of a thread, used in thread_foreach () */
+/* Compute the recent cpu of a thread, used in thread_foreach (). */
 static void thread_compute_recent_cpu (struct thread *t, void *aux UNUSED);
 
-/* Compute the priority for the BSD Scheduler. */
-static int thread_compute_BSD_priority (struct thread *t);
+/* Compute the priority for the BSD Scheduler, used in thread_foreach (). */
+static void thread_compute_BSD_priority (struct thread *t, void *aux UNUSED);
 
 static bool thread_compare_priority (const struct list_elem *a,
                                      const struct list_elem *b,
@@ -187,27 +187,30 @@ thread_tick (void)
   else 
     {
       kernel_ticks++; 
-      
-      if (thread_mlfqs)
+    }
+
+  if (thread_mlfqs)
+    {
+      /* Recalculate load_avg and recent_cpu once per second. */
+      if (timer_ticks () % TIMER_FREQ == 0)  
         {
-          /* Increment recent_cpu by 1. */
-          t->recent_cpu = ADD_FP_INT (t->recent_cpu, 1); 
+          /* Compute load_avg first. */
+          thread_compute_load_avg ();
 
-          /* Recalculate load_avg and recent_cpu once per second. */
-          if (timer_ticks () % TIMER_FREQ == 0)  
-            {
-              /* Compute load_avg first. */
-              load_avg = thread_compute_load_avg ();
-              thread_foreach (thread_compute_recent_cpu, NULL);
-            }
+          fp coeff = DIVIDE_FP_FP (MULTIPLY_FP_INT (load_avg, 2), ADD_FP_INT (MULTIPLY_FP_INT (load_avg, 2), 1));
 
-          /* Recalculate the priority once per four ticks. */
-          if (timer_ticks () % TIME_SLICE == 0) 
-            {
-              int new_priority = thread_compute_BSD_priority (t);
-              thread_set_priority (new_priority);
-            }  
+          thread_foreach (thread_compute_recent_cpu, &coeff);
         }
+
+      /* Increment recent_cpu by 1. */
+      if (t != idle_thread)
+        t->recent_cpu = ADD_FP_INT (t->recent_cpu, 1); 
+
+      /* Recalculate the priority once per four ticks. */
+      if (timer_ticks () % TIME_SLICE == 0) 
+        {
+          thread_foreach (thread_compute_BSD_priority, NULL);
+        }  
     }
     
   /* Enforce preemption. */
@@ -530,9 +533,7 @@ thread_set_nice (int new_nice)
   t->nice = new_nice;
 
   /* Recalculates the thread’s priority based on the new value. */
-  int new_priority = thread_compute_BSD_priority (t); 
-
-  thread_set_priority (new_priority);
+  thread_compute_BSD_priority(t, NULL);
 }
 
 /* Returns the current thread's nice value. */
@@ -561,36 +562,44 @@ thread_get_recent_cpu (void)
 }
 
 static 
-fp 
+void 
 thread_compute_load_avg (void) {
   int ready_or_running_threads = threads_ready_or_running ();
   fp f_59_60 = DIVIDE_FP_FP (TO_FP (59), TO_FP (60));
   fp f_1_60 = DIVIDE_FP_FP (TO_FP (1), TO_FP (60));
-  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
 
-  return load_avg;
+  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
 }
 
 static 
 void 
-thread_compute_recent_cpu (struct thread *t, void *aux UNUSED) {
+thread_compute_recent_cpu (struct thread *t, void *aux) {
   if (t == idle_thread)
     return;
 
-  fp mul_2_load_avg = MULTIPLY_FP_FP (TO_FP (2), load_avg);
-  fp new_recent_cpu = ADD_FP_INT (DIVIDE_FP_FP (mul_2_load_avg, MULTIPLY_FP_FP (ADD_FP_INT (mul_2_load_avg, 1), t->recent_cpu)), t->nice);
-
-  t->recent_cpu = new_recent_cpu;
+  fp coeff = * (fp *) aux;
+  
+  t->recent_cpu = ADD_FP_INT (MULTIPLY_FP_FP (coeff, t->recent_cpu), t->nice);
 }
 
 static 
-int 
-thread_compute_BSD_priority (struct thread *t) {
+void 
+thread_compute_BSD_priority (struct thread *t, void *aux UNUSED) {
+  if (t == idle_thread)
+    return;
+
   fp new_priority = SUBTRACT_FP_INT (SUBTRACT_FP_FP (TO_FP (PRI_MAX), DIVIDE_FP_INT (t->recent_cpu, 4)), (t->nice * 2));
-  
-  ASSERT (t->priority >= PRI_MIN && t->priority <= PRI_MAX);
-  
-  return TO_INT_ROUND_DOWN (new_priority);
+
+  t->priority = TO_INT_ROUND_DOWN (new_priority);
+
+  if (t->priority < PRI_MIN) 
+    {
+      t->priority = PRI_MIN;
+    }
+  else if (t->priority > PRI_MAX)
+    { 
+      t->priority = PRI_MAX;
+    }
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -690,13 +699,14 @@ init_thread (struct thread *t, const char *name, int priority, struct thread *pa
     if (parent == NULL)
       {
         t->nice = 0;
-        t->recent_cpu = 0;
+        t->recent_cpu = TO_FP (0);
       }
     else
       {
         t->nice = parent->nice;
-        t->priority = thread_compute_BSD_priority (t);
+        t->recent_cpu = parent->recent_cpu;
       }
+    thread_compute_BSD_priority (t, NULL);
   }
 
   old_level = intr_disable ();
