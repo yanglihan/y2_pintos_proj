@@ -95,6 +95,8 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
     struct list locks;                  /* List of locks held by the thread. */
     struct lock *lock;                  /* The lock the thread is trying to acquire */
+    int nice;                           /* nice value, -20 <= nice <= 20 */
+    fp recent_cpu;                      /* The amount of CPU time a thread has received “recently” */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -106,10 +108,6 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-    int nice;        /* nice value, -20 <= nice <= 20 */
-    fp recent_cpu;  /* The amount of CPU time a thread has received “recently” */
-
   };
 
 /* If false (default), use round-robin scheduler.
