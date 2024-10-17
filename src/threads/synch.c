@@ -212,7 +212,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  if (lock->holder != NULL)
+  if ((!thread_mlfqs) && (lock->holder != NULL))
     {
       int priority = thread_get_priority ();
       struct thread *t = thread_current ();

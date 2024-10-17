@@ -120,6 +120,7 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
+  load_avg = TO_FP (0);
   init_thread (initial_thread, "main", PRI_DEFAULT, NULL);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
@@ -154,7 +155,7 @@ threads_ready (void)
 }
 
 /* Returns the number of threads ready or running, idle_thread does not count. */
-size_t
+static size_t
 threads_ready_or_running (void)
 {
   size_t total = 0;
@@ -185,24 +186,27 @@ thread_tick (void)
   /* If not idle thread. */
   else 
     {
-      kernel_ticks++;
-
-      /* Increment recent_cpu by 1. */
-      t->recent_cpu = ADD_FP_INT (t->recent_cpu, 1);  
-
-      /* Recalculate load_avg and recent_cpu once per second. */
-      if (timer_ticks () % TIMER_FREQ == 0)  
+      kernel_ticks++; 
+      
+      if (thread_mlfqs)
         {
-          /* Compute load_avg first. */
-          load_avg = thread_compute_load_avg ();
-          thread_foreach (thread_compute_recent_cpu, NULL);
-        }
+          /* Increment recent_cpu by 1. */
+          t->recent_cpu = ADD_FP_INT (t->recent_cpu, 1); 
 
-      /* Recalculate the priority once per four ticks. */
-      if (timer_ticks () % TIME_SLICE == 0) 
-        {
-          int new_priority = thread_compute_BSD_priority (t);
-          thread_set_priority (new_priority);
+          /* Recalculate load_avg and recent_cpu once per second. */
+          if (timer_ticks () % TIMER_FREQ == 0)  
+            {
+              /* Compute load_avg first. */
+              load_avg = thread_compute_load_avg ();
+              thread_foreach (thread_compute_recent_cpu, NULL);
+            }
+
+          /* Recalculate the priority once per four ticks. */
+          if (timer_ticks () % TIME_SLICE == 0) 
+            {
+              int new_priority = thread_compute_BSD_priority (t);
+              thread_set_priority (new_priority);
+            }  
         }
     }
     
@@ -479,14 +483,17 @@ thread_update_priority (void)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority)
-{
-  struct thread *t = thread_current ();
-  t->base_priority = new_priority;
-  thread_update_priority ();
-  if (!list_empty (&ready_list))
+{ 
+  if (!thread_mlfqs)
     {
-      if (t->priority < get_highest_priority_thread (&ready_list)->priority)
-        thread_yield ();
+      struct thread *t = thread_current ();
+      t->base_priority = new_priority;
+      thread_update_priority ();
+      if (!list_empty (&ready_list))
+        {
+          if (t->priority < get_highest_priority_thread (&ready_list)->priority)
+            thread_yield ();
+        }
     }
 }
 
@@ -543,7 +550,7 @@ thread_compute_load_avg (void) {
   int ready_or_running_threads = threads_ready_or_running ();
   fp f_59_60 = DIVIDE_FP_FP (TO_FP (59), TO_FP (60));
   fp f_1_60 = DIVIDE_FP_FP (TO_FP (1), TO_FP (60));
-  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), MULTIPLY_FP_FP (f_1_60, ready_or_running_threads));
+  load_avg = ADD_FP_FP (MULTIPLY_FP_FP(f_59_60, load_avg), MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
 
   return load_avg;
 }
