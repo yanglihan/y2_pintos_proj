@@ -223,7 +223,7 @@ lock_acquire (struct lock *lock)
         {
           t->lock->semaphore.priority = priority;
           t = t->lock->holder;
-          t->priority = priority;
+          thread_donate_priority (t, priority);
         }
     }
 

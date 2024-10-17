@@ -480,7 +480,7 @@ thread_update_priority (void)
   return t->priority;
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's base priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority)
 { 
@@ -493,6 +493,22 @@ thread_set_priority (int new_priority)
         {
           if (t->priority < get_highest_priority_thread (&ready_list)->priority)
             thread_yield ();
+        }
+    }
+}
+
+/* Donate a temporary priority NEW_PRIORITY to another thread. */
+void
+thread_donate_priority (struct thread *t, int new_priority)
+{
+  if (t->priority < new_priority)
+    {
+      t->priority = new_priority;
+      if (t->status == THREAD_READY)
+        {
+          list_remove (&t->elem);
+          list_insert_ordered (&ready_list, &t->elem, thread_compare_priority,
+                               0);
         }
     }
 }
