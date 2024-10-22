@@ -25,3 +25,5 @@
 *.toc
 
 .vscode/settings.json
+.DS_Store
+doc/design/.DS_Store
