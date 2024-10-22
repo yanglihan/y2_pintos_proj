@@ -20,7 +20,7 @@ typedef int32_t fp;
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) - 1)         /* Error value for tid_t. */
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
@@ -119,7 +119,7 @@ extern bool thread_mlfqs;
 
 void thread_init (void);
 void thread_start (void);
-size_t threads_ready(void);
+size_t threads_ready (void);
 
 void thread_tick (void);
 void thread_print_stats (void);
@@ -151,11 +151,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/* Returns the highest priority thread in the current list of ready threads. */
-struct thread *get_highest_priority_thread(struct list *thread_list);
-
-/* Removes and returns the highest priority thread 
-   in the current list of ready threads. */
-struct thread *remove_highest_priority_thread(struct list *thread_list);
+struct thread *get_highest_priority_thread (struct list *thread_list);
+struct thread *remove_highest_priority_thread (struct list *thread_list);
 
 #endif /* threads/thread.h */
