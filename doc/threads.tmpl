@@ -41,14 +41,34 @@ FirstName LastName <email@domain.example>
 >> How do you ensure that the highest priority waiting thread wakes up first for
 >> a (i) semaphore, (ii) lock, or (iii) condition variable?
 
+(i) When sema_down() is called, the thread with highest priority in waiters would 
+always be unblocked first, and the current thread would yield if it has lower 
+priority.
+(ii) As a lock contains a semaphore, modifying the semaphore would suffice.
+(iii) An extra field priority storing current thread's priority is added to 
+semaphore_elem, so that sema_up() could be called according to priority in 
+cond_signal().
+
 >> A4: (3 marks)
 >> Describe the sequence of events when a call to lock_acquire() causes a 
 >> priority donation. 
 >> How is nested donation handled?
 
+When lock_acquire() is called, if the BSD scheduler is not in use and the lock holder 
+is not null, then the recursive priority donation process starts. For current thread, we 
+check that if it is trying to acquire a lock. If the lock's priority is lower then the 
+thread's priority, priority donation is needed. The priorities of both the lock and its 
+holder need to be updated. The current thread is then set to be the lock holder. The 
+process repeats until the checks failed.
+
 >> A5: (3 marks)
 >> Describe the sequence of events when lock_release() is called on a lock that 
 >> a higher-priority thread is waiting for.
+
+When lock_release() is called, the lock is removed from the lock list, the thread's 
+effective priority is being updated. sema_up() is then called. Within sema_up(), the 
+lock's priority is being updated. If a higher-priority thread is waiting, then the 
+current thread would yield after the waiting thread being unblocked.
 
 ---- SYNCHRONIZATION ----
 
