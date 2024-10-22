@@ -74,6 +74,23 @@ FirstName LastName <email@domain.example>
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
+>> Changed `struct` member:
+struct thread 
+{
+    int nice;                           /* nice value, -20 <= nice <= 20 */
+    fp recent_cpu;                      /* The amount of CPU time a thread has received “recently” */
+}
+- nice will alter the value of priority, initial thread nice = 0, others inherit parent nice
+- recent_cpu measures how much CPU time each process has received "recently"
+  recalculates once per second
+  initial thread = 0, others inherit form parent recent_cpu
+  recent_cpu++ for the running thread during each timer interrupt
+
+>> New static variable:
+static fp load_avg;  /* Estimates the average number of threads ready to run over the past minute */
+ - load_avg is system-wide, not thread-specific, hence not belongs to struct thread
+ - estimates the average number of threads ready to run over the past minute
+
 ---- ALGORITHMS ----
 
 >> B2: (3 marks)
@@ -85,7 +102,7 @@ FirstName LastName <email@domain.example>
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
 -----  --  --  --  --  --  --   ------
- 0
+ 0      0   0   0   
  4
  8
 12
@@ -106,3 +123,19 @@ ticks   A   B   C   A   B   C   to run
 >> B4: (3 marks)
 >> Briefly critique your design, pointing out advantages and disadvantages in 
 >> your design choices.
+
+>> Design:
+- Simplicity and clarity.
+- Most algorithms are organised into different functions, that are built on top of the given helper functions
+- Macro for fixed-point calculations
+
+
+>> Advantages:
+- Use of macro, which is faster
+- Use of thread_foreach(thread_action_func *action, void *aux), in particular calculates the load_avg and pass this into
+  the thread_foreach function to prevent duplicates calculations inside the action function for each thread
+- Clarity
+
+>> Disadvantages:
+- Didn't use a 64 queues, used one single queue instead
+- Could results in a lower efficiency when the queue becomes very large
