@@ -25,10 +25,10 @@ static int64_t ticks;
 static unsigned loops_per_tick;
 
 /* Info for a sleeping thread. */
-static struct sleeper
+struct sleeper
   {
     struct list_elem elem;
-    int64_t sleep_until;        /* Ticks that this thread should sleep for. */
+    int64_t sleep_until; /* Ticks that this thread should sleep for. */
     struct semaphore sema;
   };
 

@@ -500,7 +500,7 @@ thread_set_priority (int new_priority)
       if (!list_empty (&ready_list))
         {
           if (t->priority
-              < list_entry (list_front (&ready_list), struct thread, elem)
+              < list_entry (list_back (&ready_list), struct thread, elem)
                     ->priority)
             thread_yield ();
         }
@@ -751,7 +751,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    return list_entry (list_pop_back (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
