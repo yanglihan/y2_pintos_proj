@@ -206,6 +206,18 @@ lock_init (struct lock *lock)
   sema_init (&lock->semaphore, 1);
 }
 
+/* Donates a priority to a lock. */
+static void
+lock_donate_priority (struct lock *lock, int priority, int counter)
+{
+  if ((lock == NULL) || (lock->priority >= priority)
+      || (counter >= MAX_NESTED_DONATION_LAYERS))
+    return;
+  lock->priority = priority;
+  thread_donate_priority (lock->holder, priority);
+  lock_donate_priority (lock->holder->lock, priority, counter + 1);
+}
+
 /* Acquires LOCK, sleeping until it becomes available if
    necessary.  The lock must not already be held by the current
    thread. Waiting for a lock will cause the thread to donate its
@@ -226,19 +238,9 @@ lock_acquire (struct lock *lock)
 
   if ((!thread_mlfqs) && (lock->holder != NULL))
     {
-      int priority = thread_get_priority ();
       struct thread *t = thread_current ();
-      int layer = 0;
       t->lock = lock;
-
-      /* Recursive priority donation */
-      while ((t->lock != NULL) && (t->lock->priority < priority)
-             && (layer++ < MAX_NESTED_DONATION_LAYERS))
-        {
-          t->lock->priority = priority;
-          t = t->lock->holder;
-          thread_donate_priority (t, priority);
-        }
+      lock_donate_priority (lock, thread_get_priority (), 0);
     }
 
   sema_down (&lock->semaphore);
