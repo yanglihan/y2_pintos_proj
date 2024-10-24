@@ -4,6 +4,8 @@
 #include <list.h>
 #include <stdbool.h>
 
+#define MAX_NESTED_DONATION_LAYERS (8)
+
 /* A counting semaphore. */
 struct semaphore 
   {

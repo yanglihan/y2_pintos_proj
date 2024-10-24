@@ -37,7 +37,7 @@ struct semaphore_elem
   {
     struct list_elem elem;      /* List element. */
     struct semaphore semaphore; /* This semaphore. */
-    int priority;               /* Priority of this semaphore. */
+    int *priority;              /* Priority of this semaphore. */
   };
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
@@ -228,10 +228,12 @@ lock_acquire (struct lock *lock)
     {
       int priority = thread_get_priority ();
       struct thread *t = thread_current ();
+      int layer = 0;
       t->lock = lock;
 
       /* Recursive priority donation */
-      while ((t->lock != NULL) && (t->lock->priority < priority))
+      while ((t->lock != NULL) && (t->lock->priority < priority)
+             && (layer++ < MAX_NESTED_DONATION_LAYERS))
         {
           t->lock->priority = priority;
           t = t->lock->holder;
@@ -314,7 +316,7 @@ semaphore_elem_compare_priority (const struct list_elem *a,
 {
   struct semaphore_elem *a_entry = list_entry (a, struct semaphore_elem, elem);
   struct semaphore_elem *b_entry = list_entry (b, struct semaphore_elem, elem);
-  return (a_entry->priority < b_entry->priority);
+  return (*a_entry->priority < *b_entry->priority);
 }
 
 /* Initializes condition variable COND.  A condition variable
@@ -359,7 +361,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   sema_init (&waiter.semaphore, 0);
-  waiter.priority = thread_get_priority ();
+  waiter.priority = &thread_current ()->priority;
   list_push_back (&cond->waiters, &waiter.elem);
   lock_release (lock);
   sema_down (&waiter.semaphore);
