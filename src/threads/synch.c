@@ -32,7 +32,7 @@
 #include <stdio.h>
 #include <string.h>
 
-/* One semaphore in a list above. */
+/* Semaphore as a list element. */
 struct semaphore_elem
 {
   struct list_elem elem;      /* List element. */
