@@ -40,22 +40,25 @@ struct semaphore_elem
     int *priority;              /* Priority of this semaphore. */
   };
 
-/* Initializes semaphore SEMA to VALUE.  A semaphore is a
-   nonnegative integer along with two atomic operators for
-   manipulating it:
+  static void lock_donate_priority (struct lock *lock, int priority,
+                                    int counter);
 
-   - down or "P": wait for the value to become positive, then
-     decrement it.
+  /* Initializes semaphore SEMA to VALUE.  A semaphore is a
+     nonnegative integer along with two atomic operators for
+     manipulating it:
 
-   - up or "V": increment the value (and wake up one waiting
-     thread, if any). */
-void
-sema_init (struct semaphore *sema, unsigned value)
-{
-  ASSERT (sema != NULL);
+     - down or "P": wait for the value to become positive, then
+       decrement it.
 
-  sema->value = value;
-  list_init (&sema->waiters);
+     - up or "V": increment the value (and wake up one waiting
+       thread, if any). */
+  void
+  sema_init (struct semaphore *sema, unsigned value)
+  {
+    ASSERT (sema != NULL);
+
+    sema->value = value;
+    list_init (&sema->waiters);
 }
 
 /* Down or "P" operation on a semaphore.  Waits for SEMA's value
