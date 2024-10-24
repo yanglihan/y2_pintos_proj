@@ -134,11 +134,6 @@ sema_up (struct semaphore *sema)
     }
   sema->value++;
 
-  if (!list_empty (&sema->waiters)) 
-    sema->priority = get_highest_priority_thread (&sema->waiters)->priority;
-  else
-    sema->priority = -1;
-
   if (yield)
     {
       if (!intr_context ())
@@ -207,7 +202,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  lock->semaphore.priority = -1;
+  lock->priority = -1;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -234,9 +229,9 @@ lock_acquire (struct lock *lock)
       t->lock = lock;
 
       /* Recursive priority donation */
-      while ((t->lock != NULL) && (t->lock->semaphore.priority < priority))
+      while ((t->lock != NULL) && (t->lock->priority < priority))
         {
-          t->lock->semaphore.priority = priority;
+          t->lock->priority = priority;
           t = t->lock->holder;
           thread_donate_priority (t, priority);
         }
@@ -279,13 +274,25 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock)
 {
+  enum intr_level old_level;
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
   list_remove (&lock->elem);
   thread_update_priority ();
+
+  old_level = intr_disable ();
+
   sema_up (&lock->semaphore);
+
+  if (!list_empty (&lock->semaphore.waiters)) 
+    lock->priority = get_highest_priority_thread (&lock->semaphore.waiters)->priority;
+  else
+    lock->priority = -1;
+  
+  intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false

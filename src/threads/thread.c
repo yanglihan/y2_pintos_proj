@@ -458,8 +458,8 @@ static bool
 lock_compare_priority (const struct list_elem *a, const struct list_elem *b,
                        void *aux UNUSED)
 {
-  return list_entry (a, struct lock, elem)->semaphore.priority
-         < list_entry (b, struct lock, elem)->semaphore.priority;
+  return list_entry (a, struct lock, elem)->priority
+         < list_entry (b, struct lock, elem)->priority;
 }
 
 /* Updates the current thread's priority with all the locks
