@@ -477,7 +477,7 @@ thread_update_priority (void)
     max_priority
         = list_entry (list_max (&t->locks, lock_compare_priority, NULL),
                       struct lock, elem)
-              ->semaphore.priority;
+              ->priority;
 
   intr_set_level (old_level);
 

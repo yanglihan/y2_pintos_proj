@@ -218,6 +218,8 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  enum intr_level old_level;
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
@@ -238,8 +240,18 @@ lock_acquire (struct lock *lock)
     }
 
   sema_down (&lock->semaphore);
+
   lock->holder = thread_current ();
   thread_current ()->lock = NULL;
+
+  old_level = intr_disable ();
+  if (!list_empty (&lock->semaphore.waiters))
+    lock->priority = get_highest_priority_thread (&lock->semaphore.waiters)->priority;
+  else
+    lock->priority = -1;
+  
+  intr_set_level (old_level);
+
   list_push_back (&thread_current ()->locks, &lock->elem);
 }
 
@@ -274,8 +286,6 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock)
 {
-  enum intr_level old_level;
-
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
@@ -283,16 +293,7 @@ lock_release (struct lock *lock)
   list_remove (&lock->elem);
   thread_update_priority ();
 
-  old_level = intr_disable ();
-
   sema_up (&lock->semaphore);
-
-  if (!list_empty (&lock->semaphore.waiters)) 
-    lock->priority = get_highest_priority_thread (&lock->semaphore.waiters)->priority;
-  else
-    lock->priority = -1;
-  
-  intr_set_level (old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
