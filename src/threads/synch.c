@@ -32,6 +32,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* One semaphore in a list above. */
+struct semaphore_elem
+{
+  struct list_elem elem;      /* List element. */
+  struct semaphore semaphore; /* This semaphore. */
+  int priority;               /* Priority of this semaphore. */
+};
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:

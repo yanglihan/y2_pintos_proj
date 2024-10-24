@@ -582,7 +582,7 @@ thread_compute_load_avg (void)
 
 /* Computes the cpu time recently received by thread t. */
 static void
-thread_compute_recent_cpu (struct thread *t, void *aux)
+thread_compute_recent_cpu (struct thread *t, void *aux UNUSED)
 {
   if (t == idle_thread)
     return;
