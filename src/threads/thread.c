@@ -70,6 +70,7 @@ static void kernel_thread (thread_func *, void *aux);
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
+
 /* Added parent parameter for mlfqs scheduling. */
 static void init_thread (struct thread *, const char *name, int priority,
                          struct thread *parent);
@@ -79,24 +80,18 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-/* Computes the load avg, returns a signed 32 bit integer. */
-static void thread_compute_load_avg (void);
-
-/* Computes the recent cpu of a thread, used in thread_foreach (). */
-static void thread_compute_recent_cpu (struct thread *t, void *aux UNUSED);
-
-/* Computes the priority for the BSD Scheduler, used in thread_foreach (). */
-static void thread_compute_BSD_priority (struct thread *t, void *aux UNUSED);
-
-/* Compares function for an ordered list of threads based on priority. */
 static bool thread_compare_priority (const struct list_elem *a,
                                      const struct list_elem *b,
                                      void *aux UNUSED);
-
-/* Compares function for an ordered list of locks based on priority. */
 static bool lock_compare_priority (const struct list_elem *a,
                                    const struct list_elem *b,
                                    void *aux UNUSED);
+
+static void thread_tick_bsd (struct thread *t);
+static void init_thread_bsd (struct thread *t, struct thread *parent);
+static void thread_compute_load_avg (void);
+static void thread_compute_recent_cpu (struct thread *t, void *aux UNUSED);
+static void thread_compute_BSD_priority (struct thread *t, void *aux UNUSED);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -193,6 +188,16 @@ thread_tick (void)
     }
 
   if (thread_mlfqs)
+    thread_tick_bsd (t);
+    
+  /* Enforce preemption. */
+  if (++thread_ticks >= TIME_SLICE)
+    intr_yield_on_return ();  
+}
+
+/* BSD calculations when thread_tick is called. */
+static void 
+thread_tick_bsd (struct thread *t)
     {
       /* Recalculate load_avg and recent_cpu once per second. */
       if (timer_ticks () % TIMER_FREQ == 0)  
@@ -216,11 +221,6 @@ thread_tick (void)
         {
           thread_foreach (thread_compute_BSD_priority, NULL);
         }  
-    }
-    
-  /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return ();  
 }
 
 /* Prints thread statistics for debugging. */
@@ -580,7 +580,7 @@ thread_compute_load_avg (void)
                         MULTIPLY_FP_INT (f_1_60, ready_or_running_threads));
 }
 
-/* Computes the cpu time recently received by thread t. */
+/* Computes the recent cpu of a thread, used in thread_foreach (). */
 static void
 thread_compute_recent_cpu (struct thread *t, void *aux UNUSED)
 {
@@ -592,7 +592,7 @@ thread_compute_recent_cpu (struct thread *t, void *aux UNUSED)
   t->recent_cpu = ADD_FP_INT (MULTIPLY_FP_FP (coeff, t->recent_cpu), t->nice);
 }
 
-/* Computes the BSD priority for a given thread. */
+/* Computes the priority for the BSD Scheduler, used in thread_foreach (). */
 static void
 thread_compute_BSD_priority (struct thread *t, void *aux UNUSED)
 {
@@ -706,9 +706,20 @@ init_thread (struct thread *t, const char *name, int priority,
   t->lock = NULL;
   list_init (&t->locks);
 
-  /* Inherit nice value from its parent unless it is the initial thread */
   if (thread_mlfqs)
-  {
+    init_thread_bsd (t, parent);
+
+  old_level = intr_disable ();
+  list_push_back (&all_list, &t->allelem);
+  intr_set_level (old_level);
+}
+
+
+/* BSD calculations when init_thread is called. */
+static void 
+init_thread_bsd (struct thread *t, struct thread *parent)
+{
+  /* Inherit nice and recent_cpu value from its parent unless it is the initial thread. */
     if (parent == NULL)
       {
         t->nice = 0;
@@ -720,11 +731,6 @@ init_thread (struct thread *t, const char *name, int priority,
         t->recent_cpu = parent->recent_cpu;
       }
     thread_compute_BSD_priority (t, NULL);
-  }
-
-  old_level = intr_disable ();
-  list_push_back (&all_list, &t->allelem);
-  intr_set_level (old_level);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
