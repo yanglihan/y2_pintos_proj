@@ -133,7 +133,12 @@ sema_up (struct semaphore *sema)
         yield = true;
     }
   sema->value++;
-  sema->priority = get_highest_priority_thread (&sema->waiters)->priority;
+
+  if (!list_empty (&sema->waiters)) 
+    sema->priority = get_highest_priority_thread (&sema->waiters)->priority;
+  else
+    sema->priority = -1;
+
   if (yield)
     {
       if (!intr_context ())

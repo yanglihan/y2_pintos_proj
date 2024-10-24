@@ -432,7 +432,7 @@ thread_compare_priority (const struct list_elem *a, const struct list_elem *b,
                          void *aux UNUSED)
 {
   return list_entry (a, struct thread, elem)->priority
-         < list_entry (b, struct thread, elem)->priority;
+         <= list_entry (b, struct thread, elem)->priority;
 }
 
 /* Returns the thread with the highest priority. */
