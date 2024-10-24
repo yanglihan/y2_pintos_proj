@@ -464,28 +464,30 @@ lock_compare_priority (const struct list_elem *a, const struct list_elem *b,
 
 /* Updates the current thread's priority with all the locks
    it is waiting for. */
-int
+void
 thread_update_priority (void)
 {
-  enum intr_level old_level;
+  if (!thread_mlfqs)
+    {
+      enum intr_level old_level;
 
-  struct thread *t = thread_current ();
-  int max_priority = -1;
+      struct thread *t = thread_current ();
+      int max_priority = -1;
 
-  old_level = intr_disable ();
-  if (!list_empty (&t->locks))
-    max_priority
-        = list_entry (list_max (&t->locks, lock_compare_priority, NULL),
-                      struct lock, elem)
-              ->priority;
+      old_level = intr_disable ();
+      if (!list_empty (&t->locks))
+        max_priority
+            = list_entry (list_max (&t->locks, lock_compare_priority, NULL),
+                          struct lock, elem)
+                  ->priority;
+      intr_set_level (old_level);
 
-  intr_set_level (old_level);
+      if (t->base_priority > max_priority)
+        max_priority = t->base_priority;
 
-  if (t->base_priority > max_priority)
-    max_priority = t->base_priority;
+      t->priority = max_priority;
 
-  t->priority = max_priority;
-  return t->priority;
+    }
 }
 
 /* Sets the current thread's base priority to NEW_PRIORITY. */
