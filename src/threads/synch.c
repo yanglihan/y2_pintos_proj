@@ -239,6 +239,8 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  old_level = intr_disable ();
+  
   if ((!thread_mlfqs) && (lock->holder != NULL))
     {
       struct thread *t = thread_current ();
@@ -251,7 +253,6 @@ lock_acquire (struct lock *lock)
   lock->holder = thread_current ();
   thread_current ()->lock = NULL;
 
-  old_level = intr_disable ();
   if (!list_empty (&lock->semaphore.waiters))
     lock->priority = get_highest_priority_thread (&lock->semaphore.waiters)->priority;
   else
