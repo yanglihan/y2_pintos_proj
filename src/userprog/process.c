@@ -17,9 +17,11 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void set_user_stack (char* file_name, char* save_path, void** esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -51,6 +53,8 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  char *save_path;
+  char *extracted_file_name;
   struct intr_frame if_;
   bool success;
 
@@ -59,7 +63,12 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+
+  /* Separate file name from argument */
+  extracted_file_name = strtok_r (file_name, " ", &save_path);
+  
+  success = load (extracted_file_name, &if_.eip, &if_.esp);
+  set_user_stack(extracted_file_name, save_path, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -74,6 +83,55 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+static void
+set_user_stack (char* file_name, char* save_path, void** esp)
+{
+  char *token;
+  int argc = 1;
+  void* sp;
+  char* null_addr = NULL;
+
+  /* push the file name */
+  *esp -= (strlen (file_name) + 1);
+  memcpy (*esp, file_name, strlen (file_name) + 1);
+
+  /* push arguments */
+  while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
+    {
+      argc++;
+      *esp -= (strlen (token) + 1);
+      memcpy (*esp, token, strlen(token) + 1);
+    }
+  sp = *esp;
+
+  /* round down the address for word-alignment */  
+  *esp = (void *) (((uint32_t) *esp >> 2) << 2);
+  memset(*esp, 0, sp - *esp);
+
+  /* push the address of arguments */ 
+  *esp -= sizeof(char *);
+  memcpy (*esp, &null_addr, sizeof (char *));
+  for (int i = 0; i < argc; i++)
+    {
+      *esp -= sizeof (char *);
+      memcpy (*esp, &sp, sizeof (char *));
+      sp += (strlen(sp) + 1);
+    }
+  sp = *esp;
+  *esp -= sizeof (char *);
+  memcpy (*esp, &sp, sizeof (char **));
+
+  /* push the number of arguments (argc) */
+  *esp -= sizeof (int);
+  memcpy (*esp, &argc, sizeof (int));
+
+  /* push the return address */
+  *esp -= sizeof (void *);
+  memcpy (*esp, &null_addr, sizeof (void *));
+  *esp -= sizeof (char *);
+
 }
 
 /* Waits for thread TID to die and returns its exit status. 
@@ -452,7 +510,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE - 12;
+        *esp = PHYS_BASE;
       else
         palloc_free_page (kpage);
     }
