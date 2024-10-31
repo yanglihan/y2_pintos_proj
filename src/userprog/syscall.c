@@ -11,10 +11,10 @@ static void syscall_handler (struct intr_frame *);
 static void halt (void);
 static void exit (int status);
 static int write (int fd, const void *buffer, unsigned size);
-static void process_terminatation_msg (char *name, int code);
+static void process_termination_msg (char *name, int code);
 
 static void
-process_terminatation_msg (char *name, int code)
+process_termination_msg (char *name, int code)
 {
   printf("%s: exit(%d)\n", name, code);
 }
@@ -60,7 +60,7 @@ exit (int status)
   struct thread *t = thread_current ();
 
   if (t->pagedir == NULL) // if t == kernel thread or when halt system call is invoked, do not call the msg
-    process_terminatation_msg (t->name, status);
+    process_termination_msg (t->name, status);
 
   // exit
   thread_exit ();
