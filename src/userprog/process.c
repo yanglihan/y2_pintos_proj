@@ -41,9 +41,17 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+   
+  /* extract file_name */
+  int len = 0;
+  for (const char *p = file_name; 
+       (*p != '\0') && (*p != ' ') && (len < 16); p++)
+    len++;
+  char extracted_fn[16];
+  strlcpy(extracted_fn, file_name, len + 1);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -56,7 +64,7 @@ start_process (void *file_name_)
 {
   char *file_name = file_name_;
   char *save_path;
-  char *extracted_file_name;
+  char *extracted_fn;
   struct intr_frame if_;
   bool success;
 
@@ -67,10 +75,10 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   /* Separate file name from argument */
-  extracted_file_name = strtok_r (file_name, " ", &save_path);
+  extracted_fn = strtok_r (file_name, " ", &save_path);
   
-  success = load (extracted_file_name, &if_.eip, &if_.esp);
-  set_user_stack(extracted_file_name, save_path, &if_.esp);
+  success = load (extracted_fn, &if_.eip, &if_.esp);
+  set_user_stack(extracted_fn, save_path, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
