@@ -3,12 +3,17 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "devices/shutdown.h"
 
 typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
+static void halt (void);
+static void exit (int status);
+static int write (int fd, const void *buffer, unsigned size);
+static void process_terminatation_msg (char *name, int code);
 
-void
+static void
 process_terminatation_msg (char *name, int code)
 {
   printf("%s: exit(%d)\n", name, code);
@@ -29,7 +34,10 @@ syscall_handler (struct intr_frame *f)
   void *param3 = f->esp + 12;
    
   switch (syscall_num)
-    {
+    { 
+      case SYS_HALT:
+        halt();
+        break;
       case SYS_EXIT:
         exit (*((int *) param1));
         break;
@@ -39,7 +47,13 @@ syscall_handler (struct intr_frame *f)
     }
 }
 
-void
+static void
+halt (void)
+{
+  shutdown_power_off();
+}
+
+static void
 exit (int status)
 {
   // terminates the current user program, sending its exit status to the kernel
@@ -52,7 +66,7 @@ exit (int status)
   thread_exit ();
 }
 
-int
+static int
 write (int fd, const void *buffer, unsigned size)
 {
   /* Fd 1 writes to the console. */
