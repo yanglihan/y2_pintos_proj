@@ -22,6 +22,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static void set_user_stack (char* file_name, char* save_path, void** esp);
+static void push_to_user_stack (void **esp, void *src, size_t size);
+
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -86,6 +88,13 @@ start_process (void *file_name_)
 }
 
 static void
+push_to_user_stack (void **esp, void *src, size_t size)
+{
+  *esp -= size;
+  memcpy (*esp, src, size);
+}
+
+static void
 set_user_stack (char* file_name, char* save_path, void** esp)
 {
   char *token;
@@ -94,15 +103,13 @@ set_user_stack (char* file_name, char* save_path, void** esp)
   char* null_addr = NULL;
 
   /* push the file name */
-  *esp -= (strlen (file_name) + 1);
-  memcpy (*esp, file_name, strlen (file_name) + 1);
+  push_to_user_stack (esp, file_name, strlen (file_name) + 1);
 
   /* push arguments */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
       argc++;
-      *esp -= (strlen (token) + 1);
-      memcpy (*esp, token, strlen(token) + 1);
+      push_to_user_stack (esp, token, strlen (token) + 1);
     }
   sp = *esp;
 
@@ -111,26 +118,20 @@ set_user_stack (char* file_name, char* save_path, void** esp)
   memset(*esp, 0, sp - *esp);
 
   /* push the address of arguments */ 
-  *esp -= sizeof(char *);
-  memcpy (*esp, &null_addr, sizeof (char *));
+  push_to_user_stack (esp, &null_addr, sizeof (char *));
   for (int i = 0; i < argc; i++)
     {
-      *esp -= sizeof (char *);
-      memcpy (*esp, &sp, sizeof (char *));
+      push_to_user_stack (esp, &sp, sizeof (char *));
       sp += (strlen(sp) + 1);
     }
   sp = *esp;
-  *esp -= sizeof (char *);
-  memcpy (*esp, &sp, sizeof (char **));
+  push_to_user_stack (esp, &sp, sizeof (char **));
 
   /* push the number of arguments (argc) */
-  *esp -= sizeof (int);
-  memcpy (*esp, &argc, sizeof (int));
+  push_to_user_stack (esp, &argc, sizeof (int));
 
   /* push the return address */
-  *esp -= sizeof (void *);
-  memcpy (*esp, &null_addr, sizeof (void *));
-  *esp -= sizeof (char *);
+  push_to_user_stack (esp, &null_addr, sizeof (void *));
 
 }
 
