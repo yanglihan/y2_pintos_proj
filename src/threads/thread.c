@@ -268,6 +268,10 @@ thread_create (const char *name, int priority, thread_func *function,
   init_thread (t, name, priority, thread_current ());
   tid = t->tid = allocate_tid ();
 
+  #ifdef USERPROG
+    t->pid = tid;
+  #endif  
+
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack'
      member cannot be observed. */
