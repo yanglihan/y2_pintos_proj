@@ -1,8 +1,12 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <list.h>
 #include <syscall-nr.h>
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "devices/shutdown.h"
 
 typedef int pid_t;
@@ -10,8 +14,24 @@ typedef int pid_t;
 static void syscall_handler (struct intr_frame *);
 static void halt (void);
 static void exit (int status);
+static bool create (const char *file, unsigned initial_size);
+static bool remove (const char *file);
+static int open (const char *file);
 static int write (int fd, const void *buffer, unsigned size);
 static void process_termination_msg (char *name, int code);
+
+struct list open_files;
+
+static struct lock filesys_lock;
+static struct lock file_lock;
+static int cur_fd = 2;
+
+struct user_file
+  {
+    int fd;
+    struct file *file;
+    struct list_elem elem;
+  };
 
 static void
 process_termination_msg (char *name, int code)
@@ -23,6 +43,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  list_init (&open_files);
 }
 
 static void
@@ -64,6 +85,47 @@ exit (int status)
 
   // exit
   thread_exit ();
+}
+
+static bool
+create (const char *file, unsigned initial_size)
+{
+  /* create a file using the file system */
+  lock_acquire (&filesys_lock);
+  bool is_created = filesys_create (file, initial_size);
+  lock_release (&filesys_lock);
+  return is_created;
+}
+
+static bool
+remove (const char *file)
+{ 
+  /* remove the file using the file system */
+  lock_acquire (&filesys_lock);
+  bool is_removed = filesys_remove (file);
+  lock_release (&filesys_lock);
+  return is_removed;
+}
+
+static int
+open (const char *file)
+{ 
+  /* open the file using the file system*/
+  lock_acquire (&filesys_lock);
+  struct file *ret_file = filesys_open (file);
+  lock_release (&filesys_lock);
+  if (ret_file == NULL)
+    return -1;
+  
+  /* generate new file descriptor and keep track of the file */
+  struct user_file new_file;
+  lock_acquire (&file_lock);
+  new_file.fd = cur_fd++;
+  new_file.file = ret_file;
+  list_push_front (&open_files, &new_file.elem);
+  lock_release (&file_lock);
+
+  return new_file.fd;
 }
 
 static int
