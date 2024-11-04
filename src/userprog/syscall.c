@@ -8,6 +8,7 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 
 typedef int pid_t;
 
@@ -19,6 +20,7 @@ static bool remove (const char *file);
 static int open (const char *file);
 static int filesize (int fd);
 static int write (int fd, const void *buffer, unsigned size);
+static int read (int fd, void *buffer, unsigned size);
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file(int fd);
 
@@ -162,18 +164,44 @@ open (const char *file)
 }
 
 static int
+read (int fd, void *buffer, unsigned size)
+{ 
+  /* Fd 0 read from keyboard */
+  if (fd == STDIN_FILENO)
+    {
+      for (unsigned i = 0; i < size; i++)
+        *(uint8_t *) (buffer + i) = input_getc();
+      return size;
+    }
+  else
+    {
+      struct user_file *file = find_user_file (fd);
+      if (file == NULL)
+        return -1;
+      lock_acquire (&filesys_lock);
+      int bytes = file_read (file->file, buffer, size);
+      lock_release (&filesys_lock);
+      return bytes;
+    }
+}
+
+static int
 write (int fd, const void *buffer, unsigned size)
 {
   /* Fd 1 writes to the console. */
-  if (fd == 1)
+  if (fd == STDOUT_FILENO)
   {
     putbuf (buffer, size);
-
-    return size; // returns the no. of bytes actually written, which may be less than size if some bytes could not be written
+    return size;
   } 
-  else /* Otherwise, writes to file. */
+  else
   {
-    // write to file
-    // TODO:
+    struct user_file *file = find_user_file (fd);
+    if (file == NULL)
+      return -1;
+    lock_acquire (&filesys_lock);
+    int bytes = file_write (file->file, buffer, size);
+    lock_release (&filesys_lock);
+    return bytes;
   }
 }
