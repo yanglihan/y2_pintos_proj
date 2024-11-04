@@ -21,6 +21,9 @@ static int open (const char *file);
 static int filesize (int fd);
 static int write (int fd, const void *buffer, unsigned size);
 static int read (int fd, void *buffer, unsigned size);
+static void seek (int fd, unsigned position);
+static void tell (int fd);
+static void close (int fd);
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file(int fd);
 
@@ -204,4 +207,44 @@ write (int fd, const void *buffer, unsigned size)
     lock_release (&filesys_lock);
     return bytes;
   }
+}
+
+static void
+seek (int fd, unsigned position)
+{
+  struct user_file *file = find_user_file (fd);
+  if (file == NULL)
+    return;
+
+  lock_acquire (&filesys_lock);
+  file_seek(file->file, position);
+  lock_release (&filesys_lock);
+}
+
+static void 
+tell (int fd)
+{
+  struct user_file *file = find_user_file (fd);
+  if (file == NULL)
+    return;
+
+  lock_acquire (&filesys_lock);
+  file_tell (file->file);
+  lock_release (&filesys_lock);
+}
+
+static void 
+close (int fd)
+{
+  struct user_file *file = find_user_file (fd);
+  if (file == NULL)
+   return;
+
+  lock_acquire (&filesys_lock);
+  file_close (file->file);
+  lock_try_acquire (&filesys_lock);
+
+  lock_acquire (&file_lock);
+  list_remove (&file->elem);
+  lock_release (&file_lock);
 }
