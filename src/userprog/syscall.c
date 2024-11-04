@@ -17,8 +17,10 @@ static void exit (int status);
 static bool create (const char *file, unsigned initial_size);
 static bool remove (const char *file);
 static int open (const char *file);
+static int filesize (int fd);
 static int write (int fd, const void *buffer, unsigned size);
 static void process_termination_msg (char *name, int code);
+static struct user_file *find_user_file(int fd);
 
 struct list open_files;
 
@@ -37,6 +39,26 @@ static void
 process_termination_msg (char *name, int code)
 {
   printf("%s: exit(%d)\n", name, code);
+}
+
+/* find the file with given file descriptor in open_files,
+   return NULL if it is not found */
+static struct user_file *
+find_user_file(int fd)
+{ 
+  lock_acquire (&file_lock);
+  struct list_elem *e = list_begin (&open_files);
+  for (e = list_next (e); e != list_end (&open_files); e = list_next (e))
+    {
+      struct user_file *file = list_entry (e, struct user_file, elem);
+      if (file->fd == fd)
+       {
+        lock_release (&file_lock);
+        return file;
+       }
+    }
+  lock_release (&file_lock);
+  return NULL;
 }
 
 void
@@ -105,6 +127,17 @@ remove (const char *file)
   bool is_removed = filesys_remove (file);
   lock_release (&filesys_lock);
   return is_removed;
+}
+
+static int 
+filesize (int fd)
+{
+  struct user_file *file = find_user_file (fd);
+  ASSERT (file != NULL);
+  lock_acquire (&filesys_lock);
+  int size = file_length (file->file);
+  lock_release (&filesys_lock);
+  return size;
 }
 
 static int
