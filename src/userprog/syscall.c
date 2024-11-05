@@ -89,8 +89,32 @@ syscall_handler (struct intr_frame *f)
       case SYS_EXIT:
         exit (*((int *) param1));
         break;
+      case SYS_CREATE:
+        create (*((char **) param1), *((unsigned *) param1));
+        break;
+      case SYS_REMOVE:
+        remove (*((char **) param1));
+        break;
+      case SYS_FILESIZE:
+        filesize (*((int *) param1));
+        break;
+      case SYS_OPEN:
+        open (*((char **) param1));
+        break;
+      case SYS_READ:
+        read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        break;
       case SYS_WRITE:
         write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        break;
+      case SYS_CLOSE:
+        close (*((int *) param1));
+        break;
+      case SYS_TELL:
+        tell (*((int *) param1));
+        break;
+      case SYS_SEEK:
+        seek (*((int *) param1), *((unsigned *) param2));
         break;
     }
 }
@@ -107,7 +131,7 @@ exit (int status)
   // terminates the current user program, sending its exit status to the kernel
   struct thread *t = thread_current ();
 
-  if (t->pagedir == NULL) // if t == kernel thread or when halt system call is invoked, do not call the msg
+  if (t->pagedir != NULL) // if t == kernel thread or when halt system call is invoked, do not call the msg
     process_termination_msg (t->name, status);
 
   // exit
