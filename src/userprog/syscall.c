@@ -6,6 +6,7 @@
 #include "filesys/file.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
 #include "threads/synch.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
@@ -22,17 +23,19 @@ static int filesize (int fd);
 static int write (int fd, const void *buffer, unsigned size);
 static int read (int fd, void *buffer, unsigned size);
 static void seek (int fd, unsigned position);
-static void tell (int fd);
+static unsigned tell (int fd);
 static void close (int fd);
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file(int fd);
 
-struct list open_files;
+struct list open_files;             /* List of all opened files. */
 
-static struct lock filesys_lock;
-static struct lock file_lock;
-static int cur_fd = 2;
+static struct lock filesys_lock;    /* Lock for the file system. */
+static struct lock file_lock;       /* Lock for OPEN_FILES. */
+static int cur_fd = 2;              /* Current file descriptor. Skips STDIN and
+                                      STDOUT. */
 
+/* A file opened by a user program. */
 struct user_file
   {
     int fd;
@@ -40,14 +43,15 @@ struct user_file
     struct list_elem elem;
   };
 
+/* Prints a process termination message. */
 static void
 process_termination_msg (char *name, int code)
 {
   printf("%s: exit(%d)\n", name, code);
 }
 
-/* find the file with given file descriptor in open_files,
-   return NULL if it is not found */
+/* Finds the file with given file descriptor in OPEN_FILES. Returns NULL if the
+  file was not found. */
 static struct user_file *
 find_user_file(int fd)
 { 
@@ -73,6 +77,7 @@ syscall_init (void)
   list_init (&open_files);
 }
 
+/* Handles a system call. */
 static void
 syscall_handler (struct intr_frame *f) 
 { 
@@ -80,7 +85,9 @@ syscall_handler (struct intr_frame *f)
   void *param1 = f->esp + 4;
   void *param2 = f->esp + 8;
   void *param3 = f->esp + 12;
-   
+
+  unsigned *retval = &f->eax;
+
   switch (syscall_num)
     { 
       case SYS_HALT:
@@ -90,28 +97,28 @@ syscall_handler (struct intr_frame *f)
         exit (*((int *) param1));
         break;
       case SYS_CREATE:
-        create (*((char **) param1), *((unsigned *) param1));
+        *retval = create (*((char **) param1), *((unsigned *) param1));
         break;
       case SYS_REMOVE:
-        remove (*((char **) param1));
+        *retval = remove (*((char **) param1));
         break;
       case SYS_FILESIZE:
-        filesize (*((int *) param1));
+        *retval = filesize (*((int *) param1));
         break;
       case SYS_OPEN:
-        open (*((char **) param1));
+        *retval = open (*((char **) param1));
         break;
       case SYS_READ:
-        read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        *retval = read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
         break;
       case SYS_WRITE:
-        write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        *retval = write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
         break;
       case SYS_CLOSE:
         close (*((int *) param1));
         break;
       case SYS_TELL:
-        tell (*((int *) param1));
+        *retval = tell (*((int *) param1));
         break;
       case SYS_SEEK:
         seek (*((int *) param1), *((unsigned *) param2));
@@ -119,45 +126,45 @@ syscall_handler (struct intr_frame *f)
     }
 }
 
+/* Terminates PintOS. */
 static void
 halt (void)
 {
   shutdown_power_off();
 }
 
+/* Terminates teh current user program. */
 static void
 exit (int status)
 {
-  // terminates the current user program, sending its exit status to the kernel
   struct thread *t = thread_current ();
 
-  if (t->pagedir != NULL) // if t == kernel thread or when halt system call is invoked, do not call the msg
-    process_termination_msg (t->name, status);
+  process_termination_msg (t->name, status);
 
-  // exit
   thread_exit ();
 }
 
+/* Creates a file. */
 static bool
 create (const char *file, unsigned initial_size)
 {
-  /* create a file using the file system */
   lock_acquire (&filesys_lock);
   bool is_created = filesys_create (file, initial_size);
   lock_release (&filesys_lock);
   return is_created;
 }
 
+/* Removes a file. */
 static bool
 remove (const char *file)
 { 
-  /* remove the file using the file system */
   lock_acquire (&filesys_lock);
   bool is_removed = filesys_remove (file);
   lock_release (&filesys_lock);
   return is_removed;
 }
 
+/* Get the size of a file. */
 static int 
 filesize (int fd)
 {
@@ -169,33 +176,37 @@ filesize (int fd)
   return size;
 }
 
+/* Opens a file. Returns the file descriptor or -1 if the file could not be
+  opened. */
 static int
 open (const char *file)
-{ 
-  /* open the file using the file system*/
+{
   lock_acquire (&filesys_lock);
   struct file *ret_file = filesys_open (file);
   lock_release (&filesys_lock);
+
   if (ret_file == NULL)
     return -1;
   
-  /* generate new file descriptor and keep track of the file */
-  struct user_file new_file;
+  /* Generates a new file descriptor and add the file to OPEN_FILES. */
+  struct user_file *new_file = calloc (1, sizeof (struct user_file));
   lock_acquire (&file_lock);
-  new_file.fd = cur_fd++;
-  new_file.file = ret_file;
-  list_push_front (&open_files, &new_file.elem);
+  new_file->fd = cur_fd++;
+  new_file->file = ret_file;
+  list_push_front (&open_files, &new_file->elem);
   lock_release (&file_lock);
 
-  return new_file.fd;
+  return new_file->fd;
 }
 
+/* Reads SIZE bites from an opened file. Returns the size actually read or -1
+  if the file could not be read. Also works for STDIN. */
 static int
 read (int fd, void *buffer, unsigned size)
 { 
-  /* Fd 0 read from keyboard */
   if (fd == STDIN_FILENO)
     {
+      /* Reads from STDIN. Always reads the full size. */
       for (unsigned i = 0; i < size; i++)
         *(uint8_t *) (buffer + i) = input_getc();
       return size;
@@ -205,19 +216,23 @@ read (int fd, void *buffer, unsigned size)
       struct user_file *file = find_user_file (fd);
       if (file == NULL)
         return -1;
+
       lock_acquire (&filesys_lock);
       int bytes = file_read (file->file, buffer, size);
       lock_release (&filesys_lock);
+
       return bytes;
     }
 }
 
+/* Write SIZE bites to an opened file. Returns the size actually written. Also
+  works for STDOUT. */
 static int
 write (int fd, const void *buffer, unsigned size)
 {
-  /* Fd 1 writes to the console. */
   if (fd == STDOUT_FILENO)
   {
+    /* Writes to STDOUT. Always writes the full size. */
     putbuf (buffer, size);
     return size;
   } 
@@ -226,13 +241,16 @@ write (int fd, const void *buffer, unsigned size)
     struct user_file *file = find_user_file (fd);
     if (file == NULL)
       return -1;
+    
     lock_acquire (&filesys_lock);
     int bytes = file_write (file->file, buffer, size);
     lock_release (&filesys_lock);
+
     return bytes;
   }
 }
 
+/* Changes the position in an opened file. Can reach pass current EOF. */
 static void
 seek (int fd, unsigned position)
 {
@@ -245,18 +263,22 @@ seek (int fd, unsigned position)
   lock_release (&filesys_lock);
 }
 
-static void 
+/* Returns the position in an opened file. An invalid FD returns 0. */
+static unsigned
 tell (int fd)
 {
   struct user_file *file = find_user_file (fd);
   if (file == NULL)
-    return;
+    return 0;
 
   lock_acquire (&filesys_lock);
-  file_tell (file->file);
+  unsigned pos = file_tell (file->file);
   lock_release (&filesys_lock);
+
+  return pos;
 }
 
+/* Closes an opened file. */
 static void 
 close (int fd)
 {
@@ -271,4 +293,6 @@ close (int fd)
   lock_acquire (&file_lock);
   list_remove (&file->elem);
   lock_release (&file_lock);
+
+  free (file);
 }
