@@ -17,6 +17,9 @@
 typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
+static void one_arg_syscall_handler (void *esp, int sn, unsigned *retval);
+static void two_args_syscall_handler (void *esp, int sn, unsigned *retval);
+static void three_args_syscall_handler (void *esp, int sn, unsigned *retval);
 static void halt (void);
 static void exit (int status);
 static bool create (const char *file, unsigned initial_size);
@@ -76,7 +79,7 @@ find_user_file(int fd)
 
 static bool
 is_user_ptr_valid (const void *ptr)
-{
+{ 
   uint32_t *pd = thread_current ()->pagedir;
   return (ptr != NULL) && (is_user_vaddr (ptr)) &&
          (pagedir_get_page (pd, ptr) != NULL);
@@ -104,27 +107,16 @@ syscall_init (void)
   list_init (&open_files);
 }
 
-/* Handles a system call. */
 static void
-syscall_handler (struct intr_frame *f) 
-{ 
-  int syscall_num = *((int *) f->esp);
-  void *param1 = f->esp + 4;
-  void *param2 = f->esp + 8;
-  void *param3 = f->esp + 12;
-
-  unsigned *retval = &f->eax;
-
-  switch (syscall_num)
-    { 
-      case SYS_HALT:
-        halt();
-        break;
+one_arg_syscall_handler (void *esp, int sn, unsigned *retval)
+{
+  void *param1 = esp + 4;
+  if (!is_user_ptr_valid (param1))
+    exit (-1);
+  switch (sn)
+    {
       case SYS_EXIT:
         exit (*((int *) param1));
-        break;
-      case SYS_CREATE:
-        *retval = create (*((char **) param1), *((unsigned *) param2));
         break;
       case SYS_REMOVE:
         *retval = remove (*((char **) param1));
@@ -135,22 +127,73 @@ syscall_handler (struct intr_frame *f)
       case SYS_OPEN:
         *retval = open (*((char **) param1));
         break;
-      case SYS_READ:
-        *retval = read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
-        break;
-      case SYS_WRITE:
-        *retval = write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
-        break;
       case SYS_CLOSE:
         close (*((int *) param1));
         break;
       case SYS_TELL:
         *retval = tell (*((int *) param1));
         break;
+      default:
+        two_args_syscall_handler (esp, sn, retval);
+    }
+}
+
+static void
+two_args_syscall_handler (void *esp, int sn, unsigned *retval)
+{
+  void *param1 = esp + 4;
+  void *param2 = esp + 8;
+  if (!is_user_ptr_valid (param2))
+    exit (-1);
+  
+  switch (sn)
+    {
+      case SYS_CREATE:
+        *retval = create (*((char **) param1), *((unsigned *) param2));
+        break;
       case SYS_SEEK:
         seek (*((int *) param1), *((unsigned *) param2));
         break;
+      default:
+        three_args_syscall_handler (esp, sn, retval);
     }
+}
+
+static void
+three_args_syscall_handler (void *esp, int sn, unsigned *retval)
+{
+  void *param1 = esp + 4;
+  void *param2 = esp + 8;
+  void *param3 = esp + 12;
+  if (!is_user_ptr_valid (param3))
+    exit (-1);
+
+  switch (sn)
+    {
+      case SYS_READ:
+        *retval = read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        break;
+      case SYS_WRITE:
+        *retval = write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
+        break;
+      default:
+        exit (-1);
+    }
+}
+
+/* Handles a system call. */
+static void
+syscall_handler (struct intr_frame *f) 
+{ 
+  if (!is_user_ptr_valid (f->esp))
+    exit (-1);
+  int syscall_num = *((int *) f->esp);
+
+  unsigned *retval = &f->eax;
+  if (syscall_num == SYS_HALT)
+    halt();
+  else
+    one_arg_syscall_handler(f->esp, syscall_num, retval);
 }
 
 /* Terminates PintOS. */
@@ -255,6 +298,8 @@ open (const char *file)
 static int
 read (int fd, void *buffer, unsigned size)
 { 
+  if (!is_user_ptr_valid (buffer))
+    exit (-1);
   if (fd == STDIN_FILENO)
     {
       /* Reads from STDIN. Always reads the full size. */
@@ -281,6 +326,8 @@ read (int fd, void *buffer, unsigned size)
 static int
 write (int fd, const void *buffer, unsigned size)
 {
+  if (!is_user_ptr_valid (buffer))
+    exit (-1);
   if (fd == STDOUT_FILENO)
   {
     /* Writes to STDOUT. Always writes the full size. */
@@ -339,7 +386,7 @@ close (int fd)
 
   lock_acquire (&filesys_lock);
   file_close (file->file);
-  lock_try_acquire (&filesys_lock);
+  lock_release (&filesys_lock);
 
   lock_acquire (&file_lock);
   list_remove (&file->elem);
