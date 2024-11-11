@@ -1,13 +1,16 @@
 #include "userprog/syscall.h"
+#include "userprog/pagedir.h"
 #include <stdio.h>
 #include <list.h>
 #include <syscall-nr.h>
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "filesys/directory.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 
@@ -70,6 +73,27 @@ find_user_file(int fd)
   return NULL;
 }
 
+static bool
+is_user_ptr_valid (const void *ptr)
+{
+  uint32_t *pd = thread_current ()->pagedir;
+  return (ptr != NULL) && (is_user_vaddr (ptr)) &&
+         (pagedir_get_page (pd, ptr) != NULL);
+}
+
+/* return the pointer to the end of the file name.
+   return NULL if the length of file name is larger then NAME_MAX */
+static const char *
+find_file_name_end (const void *file)
+{
+  ASSERT (file != NULL);
+  int len = 0;
+  const char *end;
+  for (end = file; (len < NAME_MAX) && (*end != '\0'); end++)
+    len++;
+  return (*end == '\0') ? end : NULL;
+}
+
 void
 syscall_init (void) 
 {
@@ -99,7 +123,7 @@ syscall_handler (struct intr_frame *f)
         exit (*((int *) param1));
         break;
       case SYS_CREATE:
-        *retval = create (*((char **) param1), *((unsigned *) param1));
+        *retval = create (*((char **) param1), *((unsigned *) param2));
         break;
       case SYS_REMOVE:
         *retval = remove (*((char **) param1));
@@ -149,7 +173,15 @@ exit (int status)
 /* Creates a file. */
 static bool
 create (const char *file, unsigned initial_size)
-{
+{ 
+  if (!is_user_ptr_valid (file))
+    exit (-1);
+  const char *end = find_file_name_end (file);
+  if (end == NULL)
+    return false;
+  if (!is_user_ptr_valid (end))
+    exit (-1);
+
   lock_acquire (&filesys_lock);
   bool is_created = filesys_create (file, initial_size);
   lock_release (&filesys_lock);
@@ -160,6 +192,14 @@ create (const char *file, unsigned initial_size)
 static bool
 remove (const char *file)
 { 
+  if (!is_user_ptr_valid (file))
+    exit (-1);
+  const char *end = find_file_name_end (file);
+  if (end == NULL)
+    return false;
+  if (!is_user_ptr_valid (end))
+    exit (-1);
+    
   lock_acquire (&filesys_lock);
   bool is_removed = filesys_remove (file);
   lock_release (&filesys_lock);
@@ -183,6 +223,14 @@ filesize (int fd)
 static int
 open (const char *file)
 {
+  if (!is_user_ptr_valid (file))
+    exit (-1);
+  const char *end = find_file_name_end (file);
+  if (end == NULL)
+    return -1;
+  if (!is_user_ptr_valid (end))
+    exit (-1);
+
   lock_acquire (&filesys_lock);
   struct file *ret_file = filesys_open (file);
   lock_release (&filesys_lock);
