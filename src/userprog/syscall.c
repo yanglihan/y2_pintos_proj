@@ -59,8 +59,9 @@ static struct user_file *
 find_user_file(int fd)
 { 
   lock_acquire (&file_lock);
-  struct list_elem *e = list_begin (&open_files);
-  for (e = list_next (e); e != list_end (&open_files); e = list_next (e))
+  struct list_elem *e;
+  for (e = list_begin (&open_files); 
+       e != list_end (&open_files); e = list_next (e))
     {
       struct user_file *file = list_entry (e, struct user_file, elem);
       if (file->fd == fd)
@@ -262,7 +263,7 @@ read (int fd, void *buffer, unsigned size)
       return size;
     }
   else
-    {
+    { 
       struct user_file *file = find_user_file (fd);
       if (file == NULL)
         return -1;
