@@ -111,7 +111,8 @@ static void
 one_arg_syscall_handler (void *esp, int sn, unsigned *retval)
 {
   void *param1 = esp + 4;
-  if (!is_user_ptr_valid (param1))
+  if (!is_user_ptr_valid (param1) ||
+      !is_user_ptr_valid (param1 + sizeof (void *) - 1))
     exit (-1);
   switch (sn)
     {
@@ -143,7 +144,8 @@ two_args_syscall_handler (void *esp, int sn, unsigned *retval)
 {
   void *param1 = esp + 4;
   void *param2 = esp + 8;
-  if (!is_user_ptr_valid (param2))
+  if (!is_user_ptr_valid (param2) ||
+      !is_user_ptr_valid (param2 + sizeof (void *) - 1))
     exit (-1);
   
   switch (sn)
@@ -165,7 +167,8 @@ three_args_syscall_handler (void *esp, int sn, unsigned *retval)
   void *param1 = esp + 4;
   void *param2 = esp + 8;
   void *param3 = esp + 12;
-  if (!is_user_ptr_valid (param3))
+  if (!is_user_ptr_valid (param3) ||
+      !is_user_ptr_valid (param3 + sizeof (void *) - 1))
     exit (-1);
 
   switch (sn)
@@ -185,7 +188,8 @@ three_args_syscall_handler (void *esp, int sn, unsigned *retval)
 static void
 syscall_handler (struct intr_frame *f) 
 { 
-  if (!is_user_ptr_valid (f->esp))
+  if (!is_user_ptr_valid (f->esp) ||
+      !is_user_ptr_valid (f->esp + sizeof (void *) - 1))
     exit (-1);
   int syscall_num = *((int *) f->esp);
 
