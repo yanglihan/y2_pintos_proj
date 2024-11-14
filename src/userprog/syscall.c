@@ -1,18 +1,18 @@
 #include "userprog/syscall.h"
-#include "userprog/pagedir.h"
-#include <stdio.h>
-#include <list.h>
-#include <syscall-nr.h>
-#include "filesys/filesys.h"
-#include "filesys/file.h"
+#include "devices/input.h"
+#include "devices/shutdown.h"
 #include "filesys/directory.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
 #include "threads/interrupt.h"
-#include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "devices/shutdown.h"
-#include "devices/input.h"
+#include "userprog/pagedir.h"
+#include <list.h>
+#include <stdio.h>
+#include <syscall-nr.h>
 
 typedef int pid_t;
 
@@ -32,46 +32,45 @@ static void seek (int fd, unsigned position);
 static unsigned tell (int fd);
 static void close (int fd);
 static void process_termination_msg (char *name, int code);
-static struct user_file *find_user_file(int fd);
+static struct user_file *find_user_file (int fd);
 
-struct list open_files;             /* List of all opened files. */
-
-static struct lock filesys_lock;    /* Lock for the file system. */
-static struct lock file_lock;       /* Lock for OPEN_FILES. */
-static int cur_fd = 2;              /* Current file descriptor. Skips STDIN and
-                                      STDOUT. */
+struct list open_files;          /* List of all opened files. */
+static struct lock filesys_lock; /* Lock for the file system. */
+static struct lock file_lock;    /* Lock for OPEN_FILES. */
+static int cur_fd = 2;           /* Current file descriptor. Skips STDIN and
+                                   STDOUT. */
 
 /* A file opened by a user program. */
 struct user_file
-  {
-    int fd;
-    struct file *file;
-    struct list_elem elem;
-  };
+{
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+};
 
 /* Prints a process termination message. */
 static void
 process_termination_msg (char *name, int code)
 {
-  printf("%s: exit(%d)\n", name, code);
+  printf ("%s: exit(%d)\n", name, code);
 }
 
 /* Finds the file with given file descriptor in OPEN_FILES. Returns NULL if the
   file was not found. */
 static struct user_file *
-find_user_file(int fd)
-{ 
+find_user_file (int fd)
+{
   lock_acquire (&file_lock);
   struct list_elem *e;
-  for (e = list_begin (&open_files); 
-       e != list_end (&open_files); e = list_next (e))
+  for (e = list_begin (&open_files); e != list_end (&open_files);
+       e = list_next (e))
     {
       struct user_file *file = list_entry (e, struct user_file, elem);
       if (file->fd == fd)
-       {
-        lock_release (&file_lock);
-        return file;
-       }
+        {
+          lock_release (&file_lock);
+          return file;
+        }
     }
   lock_release (&file_lock);
   return NULL;
@@ -79,14 +78,14 @@ find_user_file(int fd)
 
 static bool
 is_user_ptr_valid (const void *ptr)
-{ 
+{
   uint32_t *pd = thread_current ()->pagedir;
-  return (ptr != NULL) && (is_user_vaddr (ptr)) &&
-         (pagedir_get_page (pd, ptr) != NULL);
+  return (ptr != NULL) && (is_user_vaddr (ptr))
+         && (pagedir_get_page (pd, ptr) != NULL);
 }
 
-/* return the pointer to the end of the file name.
-   return NULL if the length of file name is larger then NAME_MAX */
+/* Returns the pointer to the end of the file name.
+   Returns NULL if the length of file name is larger then NAME_MAX */
 static const char *
 find_file_name_end (const void *file)
 {
@@ -99,7 +98,7 @@ find_file_name_end (const void *file)
 }
 
 void
-syscall_init (void) 
+syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init (&file_lock);
@@ -111,31 +110,31 @@ static void
 one_arg_syscall_handler (void *esp, int sn, unsigned *retval)
 {
   void *param1 = esp + 4;
-  if (!is_user_ptr_valid (param1) ||
-      !is_user_ptr_valid (param1 + sizeof (void *) - 1))
+  if (!is_user_ptr_valid (param1)
+      || !is_user_ptr_valid (param1 + sizeof (void *) - 1))
     exit (-1);
   switch (sn)
     {
-      case SYS_EXIT:
-        exit (*((int *) param1));
-        break;
-      case SYS_REMOVE:
-        *retval = remove (*((char **) param1));
-        break;
-      case SYS_FILESIZE:
-        *retval = filesize (*((int *) param1));
-        break;
-      case SYS_OPEN:
-        *retval = open (*((char **) param1));
-        break;
-      case SYS_CLOSE:
-        close (*((int *) param1));
-        break;
-      case SYS_TELL:
-        *retval = tell (*((int *) param1));
-        break;
-      default:
-        two_args_syscall_handler (esp, sn, retval);
+    case SYS_EXIT:
+      exit (*((int *)param1));
+      break;
+    case SYS_REMOVE:
+      *retval = remove (*((char **)param1));
+      break;
+    case SYS_FILESIZE:
+      *retval = filesize (*((int *)param1));
+      break;
+    case SYS_OPEN:
+      *retval = open (*((char **)param1));
+      break;
+    case SYS_CLOSE:
+      close (*((int *)param1));
+      break;
+    case SYS_TELL:
+      *retval = tell (*((int *)param1));
+      break;
+    default:
+      two_args_syscall_handler (esp, sn, retval);
     }
 }
 
@@ -144,20 +143,20 @@ two_args_syscall_handler (void *esp, int sn, unsigned *retval)
 {
   void *param1 = esp + 4;
   void *param2 = esp + 8;
-  if (!is_user_ptr_valid (param2) ||
-      !is_user_ptr_valid (param2 + sizeof (void *) - 1))
+  if (!is_user_ptr_valid (param2)
+      || !is_user_ptr_valid (param2 + sizeof (void *) - 1))
     exit (-1);
-  
+
   switch (sn)
     {
-      case SYS_CREATE:
-        *retval = create (*((char **) param1), *((unsigned *) param2));
-        break;
-      case SYS_SEEK:
-        seek (*((int *) param1), *((unsigned *) param2));
-        break;
-      default:
-        three_args_syscall_handler (esp, sn, retval);
+    case SYS_CREATE:
+      *retval = create (*((char **)param1), *((unsigned *)param2));
+      break;
+    case SYS_SEEK:
+      seek (*((int *)param1), *((unsigned *)param2));
+      break;
+    default:
+      three_args_syscall_handler (esp, sn, retval);
     }
 }
 
@@ -167,44 +166,46 @@ three_args_syscall_handler (void *esp, int sn, unsigned *retval)
   void *param1 = esp + 4;
   void *param2 = esp + 8;
   void *param3 = esp + 12;
-  if (!is_user_ptr_valid (param3) ||
-      !is_user_ptr_valid (param3 + sizeof (void *) - 1))
+  if (!is_user_ptr_valid (param3)
+      || !is_user_ptr_valid (param3 + sizeof (void *) - 1))
     exit (-1);
 
   switch (sn)
     {
-      case SYS_READ:
-        *retval = read (*((int *) param1), *((void **) param2), *((unsigned *) param3));
-        break;
-      case SYS_WRITE:
-        *retval = write (*((int *) param1), *((void **) param2), *((unsigned *) param3));
-        break;
-      default:
-        exit (-1);
+    case SYS_READ:
+      *retval
+          = read (*((int *)param1), *((void **)param2), *((unsigned *)param3));
+      break;
+    case SYS_WRITE:
+      *retval = write (*((int *)param1), *((void **)param2),
+                       *((unsigned *)param3));
+      break;
+    default:
+      exit (-1);
     }
 }
 
 /* Handles a system call. */
 static void
-syscall_handler (struct intr_frame *f) 
-{ 
-  if (!is_user_ptr_valid (f->esp) ||
-      !is_user_ptr_valid (f->esp + sizeof (void *) - 1))
+syscall_handler (struct intr_frame *f)
+{
+  if (!is_user_ptr_valid (f->esp)
+      || !is_user_ptr_valid (f->esp + sizeof (void *) - 1))
     exit (-1);
-  int syscall_num = *((int *) f->esp);
+  int syscall_num = *((int *)f->esp);
 
   unsigned *retval = &f->eax;
   if (syscall_num == SYS_HALT)
-    halt();
+    halt ();
   else
-    one_arg_syscall_handler(f->esp, syscall_num, retval);
+    one_arg_syscall_handler (f->esp, syscall_num, retval);
 }
 
 /* Terminates PintOS. */
 static void
 halt (void)
 {
-  shutdown_power_off();
+  shutdown_power_off ();
 }
 
 /* Terminates teh current user program. */
@@ -221,7 +222,7 @@ exit (int status)
 /* Creates a file. */
 static bool
 create (const char *file, unsigned initial_size)
-{ 
+{
   if (!is_user_ptr_valid (file))
     exit (-1);
   const char *end = find_file_name_end (file);
@@ -239,7 +240,7 @@ create (const char *file, unsigned initial_size)
 /* Removes a file. */
 static bool
 remove (const char *file)
-{ 
+{
   if (!is_user_ptr_valid (file))
     exit (-1);
   const char *end = find_file_name_end (file);
@@ -247,7 +248,7 @@ remove (const char *file)
     return false;
   if (!is_user_ptr_valid (end))
     exit (-1);
-    
+
   lock_acquire (&filesys_lock);
   bool is_removed = filesys_remove (file);
   lock_release (&filesys_lock);
@@ -255,7 +256,7 @@ remove (const char *file)
 }
 
 /* Get the size of a file. */
-static int 
+static int
 filesize (int fd)
 {
   struct user_file *file = find_user_file (fd);
@@ -285,8 +286,8 @@ open (const char *file)
 
   if (ret_file == NULL)
     return -1;
-  
-  /* Generates a new file descriptor and add the file to OPEN_FILES. */
+
+  /* Generate a new file descriptor and add the file to OPEN_FILES. */
   struct user_file *new_file = calloc (1, sizeof (struct user_file));
   lock_acquire (&file_lock);
   new_file->fd = cur_fd++;
@@ -301,18 +302,18 @@ open (const char *file)
   if the file could not be read. Also works for STDIN. */
 static int
 read (int fd, void *buffer, unsigned size)
-{ 
+{
   if (!is_user_ptr_valid (buffer))
     exit (-1);
   if (fd == STDIN_FILENO)
     {
-      /* Reads from STDIN. Always reads the full size. */
+      /* Read from STDIN. Always reads the full size. */
       for (unsigned i = 0; i < size; i++)
-        *(uint8_t *) (buffer + i) = input_getc();
+        *(uint8_t *)(buffer + i) = input_getc ();
       return size;
     }
   else
-    { 
+    {
       struct user_file *file = find_user_file (fd);
       if (file == NULL)
         return -1;
@@ -333,23 +334,23 @@ write (int fd, const void *buffer, unsigned size)
   if (!is_user_ptr_valid (buffer))
     exit (-1);
   if (fd == STDOUT_FILENO)
-  {
-    /* Writes to STDOUT. Always writes the full size. */
-    putbuf (buffer, size);
-    return size;
-  } 
+    {
+      /* Write to STDOUT. Always writes the full size. */
+      putbuf (buffer, size);
+      return size;
+    }
   else
-  {
-    struct user_file *file = find_user_file (fd);
-    if (file == NULL)
-      return -1;
-    
-    lock_acquire (&filesys_lock);
-    int bytes = file_write (file->file, buffer, size);
-    lock_release (&filesys_lock);
+    {
+      struct user_file *file = find_user_file (fd);
+      if (file == NULL)
+        return -1;
 
-    return bytes;
-  }
+      lock_acquire (&filesys_lock);
+      int bytes = file_write (file->file, buffer, size);
+      lock_release (&filesys_lock);
+
+      return bytes;
+    }
 }
 
 /* Changes the position in an opened file. Can reach pass current EOF. */
@@ -361,7 +362,7 @@ seek (int fd, unsigned position)
     return;
 
   lock_acquire (&filesys_lock);
-  file_seek(file->file, position);
+  file_seek (file->file, position);
   lock_release (&filesys_lock);
 }
 
@@ -381,12 +382,12 @@ tell (int fd)
 }
 
 /* Closes an opened file. */
-static void 
+static void
 close (int fd)
 {
   struct user_file *file = find_user_file (fd);
   if (file == NULL)
-   return;
+    return;
 
   lock_acquire (&filesys_lock);
   file_close (file->file);

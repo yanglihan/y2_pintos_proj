@@ -26,7 +26,7 @@ static void push_to_user_stack (void **esp, void *src, size_t size);
 
 
 /* Starts a new thread running a user program loaded from
-   FILENAME.  The new thread may be scheduled (and may even exit)
+   FILENAME. The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
@@ -41,14 +41,12 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-   
-  /* extract file_name */
-  int len = 0;
-  for (const char *p = file_name; 
-       (*p != '\0') && (*p != ' ') && (len < 16); p++)
-    len++;
-  char extracted_fn[16];
-  strlcpy(extracted_fn, file_name, len + 1);
+
+  /* Extract file_name */
+  char extracted_fn[NAME_MAX + 1];
+  char *tmp;
+  strlcpy (extracted_fn, file_name, NAME_MAX + 1);
+  strtok_r (extracted_fn, " ", &tmp);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, fn_copy);
@@ -78,7 +76,7 @@ start_process (void *file_name_)
   extracted_fn = strtok_r (file_name, " ", &save_path);
   
   success = load (extracted_fn, &if_.eip, &if_.esp);
-  set_user_stack(extracted_fn, save_path, &if_.esp);
+  set_user_stack (extracted_fn, save_path, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -110,10 +108,10 @@ set_user_stack (char* file_name, char* save_path, void** esp)
   void* sp;
   char* null_addr = NULL;
 
-  /* push the file name */
+  /* Push the file name */
   push_to_user_stack (esp, file_name, strlen (file_name) + 1);
 
-  /* push arguments */
+  /* Push arguments */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
       argc++;
@@ -121,11 +119,11 @@ set_user_stack (char* file_name, char* save_path, void** esp)
     }
   sp = *esp;
 
-  /* round down the address for word-alignment */  
+  /* Round down the address for word-alignment */  
   *esp = (void *) (((uint32_t) *esp >> 2) << 2);
   memset(*esp, 0, sp - *esp);
 
-  /* push the address of arguments */ 
+  /* Push the address of arguments */ 
   push_to_user_stack (esp, &null_addr, sizeof (char *));
   for (int i = 0; i < argc; i++)
     {
@@ -135,10 +133,10 @@ set_user_stack (char* file_name, char* save_path, void** esp)
   sp = *esp;
   push_to_user_stack (esp, &sp, sizeof (char **));
 
-  /* push the number of arguments (argc) */
+  /* Push the number of arguments (argc) */
   push_to_user_stack (esp, &argc, sizeof (int));
 
-  /* push the return address */
+  /* Push the return address */
   push_to_user_stack (esp, &null_addr, sizeof (void *));
 
 }
