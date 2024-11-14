@@ -17,9 +17,6 @@
 typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
-static void one_arg_syscall_handler (void *esp, int sn, unsigned *retval);
-static void two_args_syscall_handler (void *esp, int sn, unsigned *retval);
-static void three_args_syscall_handler (void *esp, int sn, unsigned *retval);
 static void halt (void);
 static void exit (int status);
 static bool create (const char *file, unsigned initial_size);
@@ -33,6 +30,9 @@ static unsigned tell (int fd);
 static void close (int fd);
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file (int fd);
+
+static bool is_mem_valid (const void *ptr, size_t size);
+static bool is_str_mem_valid (const char *ptr, size_t size);
 
 struct list open_files;          /* List of all opened files. */
 static struct lock filesys_lock; /* Lock for the file system. */
@@ -76,25 +76,38 @@ find_user_file (int fd)
   return NULL;
 }
 
+/* Returns if the memory slice of size SIZE is valid at PTR. */
 static bool
-is_user_ptr_valid (const void *ptr)
+is_mem_valid (const void *ptr, size_t size)
 {
   uint32_t *pd = thread_current ()->pagedir;
   return (ptr != NULL) && (is_user_vaddr (ptr))
-         && (pagedir_get_page (pd, ptr) != NULL);
+         && (pagedir_get_page (pd, ptr) != NULL)
+         && (is_user_vaddr (ptr + size - 1))
+         && (pagedir_get_page (pd, ptr + size - 1) != NULL);
 }
 
-/* Returns the pointer to the end of the file name.
-   Returns NULL if the length of file name is larger then NAME_MAX */
-static const char *
-find_file_name_end (const void *file)
+/* Returns if the string at most of size SIZE is valid at PTR. This function
+  uses a loop and should be used sparingly. */
+static bool
+is_str_mem_valid (const char *ptr, size_t size)
 {
-  ASSERT (file != NULL);
-  int len = 0;
-  const char *end;
-  for (end = file; (len < NAME_MAX) && (*end != '\0'); end++)
-    len++;
-  return (*end == '\0') ? end : NULL;
+  uint32_t *pd = thread_current ()->pagedir;
+  if (ptr == NULL)
+    return false;
+  for (char *p = ptr; p < ptr + size; p++)
+    {
+      if (is_user_vaddr (p) && (pagedir_get_page (pd, p) != NULL))
+        {
+          if (*p == '\0')
+            return true;
+        }
+      else
+        {
+          return false;
+        }
+    }
+  return true;
 }
 
 void
@@ -106,99 +119,77 @@ syscall_init (void)
   list_init (&open_files);
 }
 
-static void
-one_arg_syscall_handler (void *esp, int sn, unsigned *retval)
-{
-  void *param1 = esp + 4;
-  if (!is_user_ptr_valid (param1)
-      || !is_user_ptr_valid (param1 + sizeof (void *) - 1))
-    exit (-1);
-  switch (sn)
-    {
-    case SYS_EXIT:
-      exit (*((int *)param1));
-      break;
-    case SYS_REMOVE:
-      *retval = remove (*((char **)param1));
-      break;
-    case SYS_FILESIZE:
-      *retval = filesize (*((int *)param1));
-      break;
-    case SYS_OPEN:
-      *retval = open (*((char **)param1));
-      break;
-    case SYS_CLOSE:
-      close (*((int *)param1));
-      break;
-    case SYS_TELL:
-      *retval = tell (*((int *)param1));
-      break;
-    default:
-      two_args_syscall_handler (esp, sn, retval);
-    }
-}
-
-static void
-two_args_syscall_handler (void *esp, int sn, unsigned *retval)
-{
-  void *param1 = esp + 4;
-  void *param2 = esp + 8;
-  if (!is_user_ptr_valid (param2)
-      || !is_user_ptr_valid (param2 + sizeof (void *) - 1))
-    exit (-1);
-
-  switch (sn)
-    {
-    case SYS_CREATE:
-      *retval = create (*((char **)param1), *((unsigned *)param2));
-      break;
-    case SYS_SEEK:
-      seek (*((int *)param1), *((unsigned *)param2));
-      break;
-    default:
-      three_args_syscall_handler (esp, sn, retval);
-    }
-}
-
-static void
-three_args_syscall_handler (void *esp, int sn, unsigned *retval)
-{
-  void *param1 = esp + 4;
-  void *param2 = esp + 8;
-  void *param3 = esp + 12;
-  if (!is_user_ptr_valid (param3)
-      || !is_user_ptr_valid (param3 + sizeof (void *) - 1))
-    exit (-1);
-
-  switch (sn)
-    {
-    case SYS_READ:
-      *retval
-          = read (*((int *)param1), *((void **)param2), *((unsigned *)param3));
-      break;
-    case SYS_WRITE:
-      *retval = write (*((int *)param1), *((void **)param2),
-                       *((unsigned *)param3));
-      break;
-    default:
-      exit (-1);
-    }
-}
-
 /* Handles a system call. */
 static void
 syscall_handler (struct intr_frame *f)
 {
-  if (!is_user_ptr_valid (f->esp)
-      || !is_user_ptr_valid (f->esp + sizeof (void *) - 1))
+  if (!is_mem_valid (f->esp, 4))
     exit (-1);
   int syscall_num = *((int *)f->esp);
+  void *param1 = f->esp + 4;
+  void *param2 = f->esp + 8;
+  void *param3 = f->esp + 12;
 
   unsigned *retval = &f->eax;
-  if (syscall_num == SYS_HALT)
-    halt ();
-  else
-    one_arg_syscall_handler (f->esp, syscall_num, retval);
+
+  switch (syscall_num)
+    {
+    case SYS_HALT:
+      halt ();
+      break;
+    case SYS_EXIT:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      exit (*((int *)param1));
+      break;
+    case SYS_CREATE:
+      if (!is_mem_valid (f->esp, 12))
+        exit (-1);
+      *retval = create (*((char **)param1), *((unsigned *)param2));
+      break;
+    case SYS_REMOVE:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = remove (*((char **)param1));
+      break;
+    case SYS_FILESIZE:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = filesize (*((int *)param1));
+      break;
+    case SYS_OPEN:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = open (*((char **)param1));
+      break;
+    case SYS_READ:
+      if (!is_mem_valid (f->esp, 16))
+        exit (-1);
+      *retval
+          = read (*((int *)param1), *((void **)param2), *((unsigned *)param3));
+      break;
+    case SYS_WRITE:
+      if (!is_mem_valid (f->esp, 16))
+        exit (-1);
+      *retval = write (*((int *)param1), *((void **)param2),
+                       *((unsigned *)param3));
+      break;
+    case SYS_CLOSE:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      close (*((int *)param1));
+      break;
+    case SYS_TELL:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = tell (*((int *)param1));
+      break;
+    case SYS_SEEK:
+      if (!is_mem_valid (f->esp, 16))
+        exit (-1);
+      seek (*((int *)param1), *((unsigned *)param2));
+      break;
+    }
 }
 
 /* Terminates PintOS. */
@@ -223,12 +214,7 @@ exit (int status)
 static bool
 create (const char *file, unsigned initial_size)
 {
-  if (!is_user_ptr_valid (file))
-    exit (-1);
-  const char *end = find_file_name_end (file);
-  if (end == NULL)
-    return false;
-  if (!is_user_ptr_valid (end))
+  if (!is_str_mem_valid (file, sizeof (char) * 16))
     exit (-1);
 
   lock_acquire (&filesys_lock);
@@ -241,12 +227,7 @@ create (const char *file, unsigned initial_size)
 static bool
 remove (const char *file)
 {
-  if (!is_user_ptr_valid (file))
-    exit (-1);
-  const char *end = find_file_name_end (file);
-  if (end == NULL)
-    return false;
-  if (!is_user_ptr_valid (end))
+  if (!is_str_mem_valid (file, sizeof (char) * 16))
     exit (-1);
 
   lock_acquire (&filesys_lock);
@@ -272,12 +253,7 @@ filesize (int fd)
 static int
 open (const char *file)
 {
-  if (!is_user_ptr_valid (file))
-    exit (-1);
-  const char *end = find_file_name_end (file);
-  if (end == NULL)
-    return -1;
-  if (!is_user_ptr_valid (end))
+  if (!is_str_mem_valid (file, sizeof (char) * 16))
     exit (-1);
 
   lock_acquire (&filesys_lock);
@@ -303,7 +279,7 @@ open (const char *file)
 static int
 read (int fd, void *buffer, unsigned size)
 {
-  if (!is_user_ptr_valid (buffer))
+  if (!is_str_mem_valid (buffer, size))
     exit (-1);
   if (fd == STDIN_FILENO)
     {
@@ -331,7 +307,7 @@ read (int fd, void *buffer, unsigned size)
 static int
 write (int fd, const void *buffer, unsigned size)
 {
-  if (!is_user_ptr_valid (buffer))
+  if (!is_str_mem_valid (buffer, size))
     exit (-1);
   if (fd == STDOUT_FILENO)
     {
