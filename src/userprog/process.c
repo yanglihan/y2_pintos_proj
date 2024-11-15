@@ -1,30 +1,27 @@
 #include "userprog/process.h"
-#include <debug.h>
-#include <inttypes.h>
-#include <round.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "userprog/gdt.h"
-#include "userprog/pagedir.h"
-#include "userprog/tss.h"
+#include "devices/timer.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
-#include "threads/palloc.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "devices/timer.h"
+#include "userprog/gdt.h"
+#include "userprog/pagedir.h"
+#include "userprog/tss.h"
+#include <debug.h>
+#include <inttypes.h>
+#include <round.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void set_user_stack (char* file_name, char* save_path, void** esp);
-static void push_to_user_stack (void **esp, void *src, size_t size);
-static void init_process(struct process *process, struct thread *parent);
 
 static void
 init_process (struct process *p, struct thread *parent)
@@ -33,7 +30,6 @@ init_process (struct process *p, struct thread *parent)
   p->parent = parent;
   sema_init (&p->load_sema, 0);
 }
-
 
 /* Starts a new thread running a user program loaded from
    FILENAME. The new thread may be scheduled (and may even exit)
@@ -57,37 +53,30 @@ process_execute (const char *file_name)
   char *tmp;
   strlcpy (extracted_fn, file_name, NAME_MAX + 1);
   strtok_r (extracted_fn, " ", &tmp);
-  
-  /* Create an empty process. */
-  struct process *p;
-  p = malloc (sizeof (struct process));
-  init_process (p, thread_current ());
-  p->file_name = fn_copy;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, p);
-  
-  p->pid = tid;
-  sema_down (&p->load_sema);
+  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, fn_copy);
 
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
 }
 
+static void set_user_stack (char *file_name, char *save_path, void **esp);
+static void push_to_user_stack (void *src, size_t size, void **esp);
+static void init_process (struct process *process, struct thread *parent);
+
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *process_)
+start_process (void *file_name_)
 {
-  struct process *p = process_;
-  char *file_name = p->file_name;
+  struct process *p = malloc (sizeof (struct process));
+  char *file_name = file_name_;
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
   bool success;
-
-  thread_current ()->process = p;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -100,20 +89,11 @@ start_process (void *process_)
   
   success = load (extracted_fn, &if_.eip, &if_.esp);
   set_user_stack (extracted_fn, save_path, &if_.esp);
-  p->is_load = success;
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (success)
-    {
-      list_push_front (&thread_current ()->childs, &p->child_elem);
-      sema_up (&p->load_sema);
-    }
-  else
-    {
-      sema_up (&p->load_sema);
-      thread_exit ();
-    }
+  if (!success) 
+    thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -125,69 +105,71 @@ start_process (void *process_)
   NOT_REACHED ();
 }
 
-static void
-push_to_user_stack (void **esp, void *src, size_t size)
+/* start_process() helpers. */
+
+/* Push a copy of SIZE from SRC to the user stack. */
+void
+push_to_user_stack (void *src, size_t size, void **esp)
 {
   *esp -= size;
   memcpy (*esp, src, size);
 }
 
-static void
-set_user_stack (char* file_name, char* save_path, void** esp)
+/* Push a copy of SIZE from SRC to the user stack. */
+void
+set_user_stack (char *file_name, char *save_path, void **esp)
 {
   char *token;
   int argc = 1;
-  void* sp;
-  char* null_addr = NULL;
+  void *sp;
+  char *null_addr = NULL;
 
   /* Push the file name */
-  push_to_user_stack (esp, file_name, strlen (file_name) + 1);
+  push_to_user_stack (file_name, strlen (file_name) + 1, esp);
 
   /* Push arguments */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
       argc++;
-      push_to_user_stack (esp, token, strlen (token) + 1);
+      push_to_user_stack (token, strlen (token) + 1, esp);
     }
   sp = *esp;
 
   /* Round down the address for word-alignment */  
-  *esp = (void *) (((uint32_t) *esp >> 2) << 2);
-  memset(*esp, 0, sp - *esp);
+  *esp = (void *)(((uint32_t)*esp >> 2) << 2);
+  memset (*esp, 0, sp - *esp);
 
   /* Push the address of arguments */ 
-  push_to_user_stack (esp, &null_addr, sizeof (char *));
+  push_to_user_stack (&null_addr, sizeof (char *), esp);
   for (int i = 0; i < argc; i++)
     {
-      push_to_user_stack (esp, &sp, sizeof (char *));
-      sp += (strlen(sp) + 1);
+      push_to_user_stack (&sp, sizeof (char *), esp);
+      sp += (strlen (sp) + 1);
     }
   sp = *esp;
-  push_to_user_stack (esp, &sp, sizeof (char **));
+  push_to_user_stack (&sp, sizeof (char **), esp);
 
   /* Push the number of arguments (argc) */
-  push_to_user_stack (esp, &argc, sizeof (int));
+  push_to_user_stack (&argc, sizeof (int), esp);
 
   /* Push the return address */
-  push_to_user_stack (esp, &null_addr, sizeof (void *));
-
+  push_to_user_stack (&null_addr, sizeof (void *), esp);
 }
 
 /* Waits for thread TID to die and returns its exit status. 
- * If it was terminated by the kernel (i.e. killed due to an exception), 
- * returns -1.  
- * If TID is invalid or if it was not a child of the calling process, or if 
- * process_wait() has already been successfully called for the given TID, 
- * returns -1 immediately, without waiting.
- * 
- * This function will be implemented in task 2.
- * For now, it does nothing. */
+  If it was terminated by the kernel (i.e. killed due to an exception), 
+  returns -1.  
+  If TID is invalid or if it was not a child of the calling process, or if 
+  process_wait() has already been successfully called for the given TID, 
+  returns -1 immediately, without waiting. */
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  timer_sleep(200);
+  timer_sleep (200);
   return -1;
 }
+
+static void release_file (const char *file_name);
 
 /* Free the current process's resources. */
 void
@@ -195,6 +177,10 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* Allow write to the executable flie. */
+  release_file (cur->process->file_name);
+  
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -212,6 +198,20 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+}
+
+/* process_exit() helpers. */
+
+/* Release the executable file used by exiting thread. */
+void
+release_file (const char *file_name)
+{
+  struct file *file = NULL;
+
+  file = filesys_open (file_name);
+  ASSERT (file != NULL);
+
+  file_allow_write (file);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -327,6 +327,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  /* Deny writes to executable file when running. */
+  file_deny_write (file);
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -389,8 +392,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   read_bytes = 0;
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
-              if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+              if (!load_segment (file, file_page, (void *)mem_page, read_bytes,
+                                 zero_bytes, writable))
                 goto done;
             }
           else
@@ -404,7 +407,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
 
   /* Start address. */
-  *eip = (void (*) (void)) ehdr.e_entry;
+  *eip = (void (*) (void))ehdr.e_entry;
 
   success = true;
 

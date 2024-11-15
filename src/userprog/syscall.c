@@ -382,7 +382,8 @@ close (int fd)
   free (file);
 }
 
-static pid_t 
+/* Executes CMD_LINE.  */
+static pid_t
 exec (const char *cmd_line)
 {
   struct thread *t = thread_current ();
@@ -392,8 +393,10 @@ exec (const char *cmd_line)
   return tid;
 }
 
+/* Waits until a child process PID terminates. Returns -1 if PID is not a child
+  process, or the current process is alread waiting for PID. Also returns -1 if
+  PID is terminated by the kernel. */
 static int
 wait (pid_t pid)
 {
-
 }

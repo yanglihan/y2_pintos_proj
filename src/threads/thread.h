@@ -5,6 +5,9 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/synch.h"
+#ifdef USERPROG
+#include "userprog/process.h"
+#endif
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -27,8 +30,6 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-
-struct process;
 
 /* A kernel thread or user process.
 
@@ -109,23 +110,12 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-#endif
+    struct process *process;            /* Process */
     
-    struct list childs;                  /* List of child process*/
-    struct process *process;             /* The most recent process created*/
+#endif
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-  };
-
-struct process
-  {
-   char *file_name;
-   bool is_load;
-   int pid;
-   struct semaphore load_sema;
-   struct thread *parent;
-   struct list_elem child_elem;
   };
 
 /* If false (default), use round-robin scheduler.

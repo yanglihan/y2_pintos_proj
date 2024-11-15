@@ -13,9 +13,6 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef USERPROG
-#include "userprog/process.h"
-#endif
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -102,6 +99,10 @@ static void thread_compute_BSD_priority (struct thread *t, void *aux UNUSED);
 
    After calling this function, be sure to initialize the page
    allocator before trying to create any threads with
+#ifdef USERPROG
+  else if (t->pagedir != NULL)
+    user_ticks++;
+#endif
    thread_create().
 
    It is not safe to call thread_current() until this function
@@ -706,9 +707,7 @@ init_thread (struct thread *t, const char *name, int priority,
   t->base_priority = priority;
   t->magic = THREAD_MAGIC;
   t->lock = NULL;
-  t->process = NULL;
   list_init (&t->locks);
-  list_init (&t->childs);
 
   if (thread_mlfqs)
     init_thread_bsd (t, parent);
@@ -723,7 +722,16 @@ init_thread (struct thread *t, const char *name, int priority,
 static void 
 init_thread_bsd (struct thread *t, struct thread *parent)
 {
-  /* Inherit nice and recent_cpu value from its parent unless it is the initial thread. */
+  /* Inherit nice and recent_c   thread.  This must happen late so that thread_exit() doesn't
+     pull out the rug under itself.  (We don't free
+     initial_thread because its memory was not obtained via
+     palloc().) */
+  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread)
+    {
+      ASSERT (prev != cur);
+      palloc_free_page (prev);
+    }
+}pu value from its parent unless it is the initial thread. */
     if (parent == NULL)
       {
         t->nice = 0;
