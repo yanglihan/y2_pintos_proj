@@ -28,6 +28,8 @@ static int read (int fd, void *buffer, unsigned size);
 static void seek (int fd, unsigned position);
 static unsigned tell (int fd);
 static void close (int fd);
+static pid_t exec (const char *cmd_line);
+static int wait (pid_t pid);
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file (int fd);
 
@@ -189,6 +191,10 @@ syscall_handler (struct intr_frame *f)
         exit (-1);
       seek (*((int *)param1), *((unsigned *)param2));
       break;
+    case SYS_EXEC:
+      if (!is_mem_valid (f->esp, 4))
+        exit (-1);
+      exec (*((char **)param1));
     }
 }
 
@@ -199,7 +205,7 @@ halt (void)
   shutdown_power_off ();
 }
 
-/* Terminates teh current user program. */
+/* Terminates the current user program. */
 static void
 exit (int status)
 {
@@ -374,4 +380,20 @@ close (int fd)
   lock_release (&file_lock);
 
   free (file);
+}
+
+static pid_t 
+exec (const char *cmd_line)
+{
+  struct thread *t = thread_current ();
+  tid_t tid = process_execute (cmd_line);
+  if (!t->process->is_load)
+    return -1;
+  return tid;
+}
+
+static int
+wait (pid_t pid)
+{
+
 }

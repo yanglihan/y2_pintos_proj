@@ -15,6 +15,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "devices/timer.h"
@@ -23,6 +24,15 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static void set_user_stack (char* file_name, char* save_path, void** esp);
 static void push_to_user_stack (void **esp, void *src, size_t size);
+static void init_process(struct process *process, struct thread *parent);
+
+static void
+init_process (struct process *p, struct thread *parent)
+{
+  p->is_load = false;
+  p->parent = parent;
+  sema_init (&p->load_sema, 0);
+}
 
 
 /* Starts a new thread running a user program loaded from
@@ -47,9 +57,19 @@ process_execute (const char *file_name)
   char *tmp;
   strlcpy (extracted_fn, file_name, NAME_MAX + 1);
   strtok_r (extracted_fn, " ", &tmp);
+  
+  /* Create an empty process. */
+  struct process *p;
+  p = malloc (sizeof (struct process));
+  init_process (p, thread_current ());
+  p->file_name = fn_copy;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, p);
+  
+  p->pid = tid;
+  sema_down (&p->load_sema);
+
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -58,13 +78,16 @@ process_execute (const char *file_name)
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *process_)
 {
-  char *file_name = file_name_;
+  struct process *p = process_;
+  char *file_name = p->file_name;
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
   bool success;
+
+  thread_current ()->process = p;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -77,11 +100,20 @@ start_process (void *file_name_)
   
   success = load (extracted_fn, &if_.eip, &if_.esp);
   set_user_stack (extracted_fn, save_path, &if_.esp);
+  p->is_load = success;
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (success)
+    {
+      list_push_front (&thread_current ()->childs, &p->child_elem);
+      sema_up (&p->load_sema);
+    }
+  else
+    {
+      sema_up (&p->load_sema);
+      thread_exit ();
+    }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
