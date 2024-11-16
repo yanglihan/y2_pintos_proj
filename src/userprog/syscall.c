@@ -10,6 +10,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include <list.h>
 #include <stdio.h>
 #include <syscall-nr.h>
@@ -17,6 +18,7 @@
 typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
+
 static void halt (void);
 static void exit (int status);
 static bool create (const char *file, unsigned initial_size);
@@ -28,6 +30,8 @@ static int read (int fd, void *buffer, unsigned size);
 static void seek (int fd, unsigned position);
 static unsigned tell (int fd);
 static void close (int fd);
+static pid_t exec (const char *file);
+
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file (int fd);
 
@@ -88,14 +92,14 @@ is_mem_valid (const void *ptr, size_t size)
 }
 
 /* Returns if the string at most of size SIZE is valid at PTR. This function
-  uses a loop and should be used sparingly. */
+   uses a loop and should be used sparingly.*/
 static bool
 is_str_mem_valid (const char *ptr, size_t size)
 {
   uint32_t *pd = thread_current ()->pagedir;
   if (ptr == NULL)
     return false;
-  for (char *p = ptr; p < ptr + size; p++)
+  for (const char *p = ptr; p < ptr + size; p++)
     {
       if (is_user_vaddr (p) && (pagedir_get_page (pd, p) != NULL))
         {
@@ -189,6 +193,13 @@ syscall_handler (struct intr_frame *f)
         exit (-1);
       seek (*((int *)param1), *((unsigned *)param2));
       break;
+    case SYS_EXEC:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = exec (*((char **)param1));
+      break;
+    default:
+      exit (-1);
     }
 }
 
@@ -199,7 +210,7 @@ halt (void)
   shutdown_power_off ();
 }
 
-/* Terminates teh current user program. */
+/* Terminates the current user program. */
 static void
 exit (int status)
 {
@@ -207,6 +218,7 @@ exit (int status)
 
   process_termination_msg (t->name, status);
 
+  process_pass_status (status, t->process);
   thread_exit ();
 }
 
@@ -374,4 +386,11 @@ close (int fd)
   lock_release (&file_lock);
 
   free (file);
+}
+
+/* Executes an executable file. */
+static pid_t
+exec (const char *file)
+{
+  process_execute (file);
 }

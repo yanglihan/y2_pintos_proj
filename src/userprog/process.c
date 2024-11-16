@@ -1,36 +1,62 @@
 #include "userprog/process.h"
-#include <debug.h>
-#include <inttypes.h>
-#include <round.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "userprog/gdt.h"
-#include "userprog/pagedir.h"
-#include "userprog/tss.h"
+#include "devices/timer.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "devices/timer.h"
+#include "userprog/gdt.h"
+#include "userprog/pagedir.h"
+#include "userprog/tss.h"
+#include <debug.h>
+#include <inttypes.h>
+#include <round.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Random value for struct thread's `magic' member.
+   Used to detect stack overflow.  See the big comment at the top
+   of thread.h for details. */
+#define PROCESS_MAGIC 0xe3f29a7c
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void set_user_stack (char* file_name, char* save_path, void** esp);
+static void set_user_stack (char *file_name, char *save_path, void **esp);
 static void push_to_user_stack (void **esp, void *src, size_t size);
 
+/* Argument package for start_process(). */
+struct child_proc_loader
+{
+  char *fn;
+  struct semaphore semaphore;
+  struct child_proc *proc;
+};
+
+/* Child process for parent thread's CHILDREN. This must be on
+   the parent's page, because otherwise it will be lost when the
+   child thread terminates. STATUS should be -1 at first and
+   updated in a call to exit(). */
+struct child_proc
+{
+  struct list_elem elem;
+  tid_t tid;
+  struct semaphore semaphore;
+  int status;
+  unsigned magic;
+};
 
 /* Starts a new thread running a user program loaded from
    FILENAME. The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
-process_execute (const char *file_name) 
+process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
@@ -48,19 +74,34 @@ process_execute (const char *file_name)
   strlcpy (extracted_fn, file_name, NAME_MAX + 1);
   strtok_r (extracted_fn, " ", &tmp);
 
+  /* Create a child process. Status is initialized to -1. */
+  struct child_proc *proc = malloc (sizeof (struct child_proc));
+  proc->status = -1;
+  sema_init (&proc->semaphore, 0);
+  proc->magic = PROCESS_MAGIC;
+  list_push_back (&thread_current ()->children, &proc->elem);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, fn_copy);
+  struct child_proc_loader loader;
+  loader.fn = fn_copy;
+  sema_init (&loader.semaphore, 0);
+  tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, &loader);
+
+  sema_down (&loader.semaphore);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (fn_copy);
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *loader_)
 {
-  char *file_name = file_name_;
+  struct child_proc_loader *loader = loader_;
+  struct thread *t = thread_current ();
+  struct child_proc *p = loader->proc;
+  char *file_name = loader->fn;
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
@@ -74,13 +115,20 @@ start_process (void *file_name_)
 
   /* Separate file name from argument */
   extracted_fn = strtok_r (file_name, " ", &save_path);
-  
+
   success = load (extracted_fn, &if_.eip, &if_.esp);
   set_user_stack (extracted_fn, save_path, &if_.esp);
 
+  /* Link the thread's corresponding child_proc. */
+  t->process = p;
+  p->tid = t->tid;
+
+  /* Notify process_execute(). */
+  sema_up (&loader->semaphore);
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success)
     thread_exit ();
 
   /* Start the user process by simulating a return from an
@@ -89,24 +137,25 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g"(&if_) : "memory");
   NOT_REACHED ();
 }
 
+/* Pushes a copy of src to the user stack. */
 static void
 push_to_user_stack (void **esp, void *src, size_t size)
 {
   *esp -= size;
   memcpy (*esp, src, size);
 }
-
+/* Tokenizes FILE_NAME and push arguments to the user stack. */
 static void
-set_user_stack (char* file_name, char* save_path, void** esp)
+set_user_stack (char *file_name, char *save_path, void **esp)
 {
   char *token;
   int argc = 1;
-  void* sp;
-  char* null_addr = NULL;
+  void *sp;
+  char *null_addr = NULL;
 
   /* Push the file name */
   push_to_user_stack (esp, file_name, strlen (file_name) + 1);
@@ -119,16 +168,16 @@ set_user_stack (char* file_name, char* save_path, void** esp)
     }
   sp = *esp;
 
-  /* Round down the address for word-alignment */  
-  *esp = (void *) (((uint32_t) *esp >> 2) << 2);
-  memset(*esp, 0, sp - *esp);
+  /* Round down the address for word-alignment */
+  *esp = (void *)(((uint32_t)*esp >> 2) << 2);
+  memset (*esp, 0, sp - *esp);
 
-  /* Push the address of arguments */ 
+  /* Push the address of arguments */
   push_to_user_stack (esp, &null_addr, sizeof (char *));
   for (int i = 0; i < argc; i++)
     {
       push_to_user_stack (esp, &sp, sizeof (char *));
-      sp += (strlen(sp) + 1);
+      sp += (strlen (sp) + 1);
     }
   sp = *esp;
   push_to_user_stack (esp, &sp, sizeof (char **));
@@ -138,22 +187,36 @@ set_user_stack (char* file_name, char* save_path, void** esp)
 
   /* Push the return address */
   push_to_user_stack (esp, &null_addr, sizeof (void *));
-
 }
 
-/* Waits for thread TID to die and returns its exit status. 
- * If it was terminated by the kernel (i.e. killed due to an exception), 
- * returns -1.  
- * If TID is invalid or if it was not a child of the calling process, or if 
- * process_wait() has already been successfully called for the given TID, 
+/* Waits for thread TID to die and returns its exit status.
+ * If it was terminated by the kernel (i.e. killed due to an exception),
+ * returns -1.
+ * If TID is invalid or if it was not a child of the calling process, or if
+ * process_wait() has already been successfully called for the given TID,
  * returns -1 immediately, without waiting.
- * 
+ *
  * This function will be implemented in task 2.
  * For now, it does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
-  timer_sleep(200);
+  struct list_elem *e;
+  struct list *children = &thread_current ()->children;
+
+  for (e = list_begin (children); e != list_end (children); e = list_next (e))
+    {
+      struct child_proc *proc = list_entry (e, struct child_proc, elem);
+      if (child_tid == proc->tid)
+        {
+          int status;
+          sema_down (&proc->semaphore);
+          status = proc->status;
+          list_remove (&proc->elem);
+          free (proc);
+          return status;
+        }
+    }
   return -1;
 }
 
@@ -167,7 +230,7 @@ process_exit (void)
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
-  if (pd != NULL) 
+  if (pd != NULL)
     {
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
@@ -196,6 +259,19 @@ process_activate (void)
   /* Set thread's kernel stack for use in processing
      interrupts. */
   tss_update ();
+}
+
+/* Passes STATUS back to parent. Does nothing if the parent is
+   no longer maintaining the process. */
+void
+process_pass_status (int status, void *process_)
+{
+  struct child_proc *process = process_;
+  if (process->magic == PROCESS_MAGIC)
+    {
+      process->status = status;
+      sema_up (&process->semaphore);
+    }
 }
 
 /* We load ELF binaries.  The following definitions are taken
