@@ -43,10 +43,35 @@ FirstName LastName <email@domain.example>
 >> PintOS does not implement strtok() because it is not thread safe. 
 >> Explain the problem with strtok() and how strtok_r() avoids this issue.
 
+Ans:
+- strtok() uses global data, so i is unsafe in threaded programs such as kernels.
+- strtok_r() is a reentrant version of strtok(). The saveptr argument is a pointer 
+to string var that is used internally by strtok_r() to maintian context between 
+sucessive calls that parse the same string.
+- On the first call, str should point to the string to be parsed, and the value of 
+saveptr is ignored. In subsequent calls, str should be NULL, and saveptr should be
+unchanged since the previous call.
+- Hence different strings can be parsed concurrently using sequnces of calls to 
+strtok_r() that specify different saveptr argumens
+
 >> A4: (3 marks)
 >> In PintOS, the kernel separates commands into an executable name and arguments. 
 >> In Unix-like systems, the shell does this separation. 
 >> Identify three advantages of the Unix approach.
+
+Ans: 
+- Unix systems allow for greater fliexiblity and modularity. Since the shell supports
+multiple commands on one line and pass outputs btween commands, users can create complex
+commnd pipelines by chaining simple commands together using shell features, such as 
+pipes and redirection.
+- In addition, the Unix systems are more user-customisable as the shell allows users to 
+cusetomise their command-line experience. For example, users can create aliases, functions
+and scripts to automate repetitive tasks and tailor the shell to specific needs. Hence,
+increasing efficiency.
+- Finally, separating the argument passing procedure makes the Unix systems more organised. 
+In particular, the kernel ocuses onn low-level operations and resource management, while the
+shell handles user interactions and command parsing. This separation simplifies the design
+and implementation of the system and thus, making it eaiser to maintain.
 
                  SYSTEM CALLS
                  ============
