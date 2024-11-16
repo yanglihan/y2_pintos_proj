@@ -31,6 +31,7 @@ static void seek (int fd, unsigned position);
 static unsigned tell (int fd);
 static void close (int fd);
 static pid_t exec (const char *file);
+static int wait (pid_t pid);
 
 static void process_termination_msg (char *name, int code);
 static struct user_file *find_user_file (int fd);
@@ -197,6 +198,11 @@ syscall_handler (struct intr_frame *f)
       if (!is_mem_valid (f->esp, 8))
         exit (-1);
       *retval = exec (*((char **)param1));
+      break;
+    case SYS_WAIT:
+      if (!is_mem_valid (f->esp, 8))
+        exit (-1);
+      *retval = wait (*(int *)param1);
       break;
     default:
       exit (-1);
@@ -392,5 +398,13 @@ close (int fd)
 static pid_t
 exec (const char *file)
 {
-  process_execute (file);
+  tid_t tid = process_execute (file);
+  return tid;
+}
+
+/* Wait for a process*/
+static int
+wait (pid_t pid)
+{
+  return process_wait (pid);
 }
