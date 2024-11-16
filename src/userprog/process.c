@@ -84,8 +84,10 @@ process_execute (const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   struct child_proc_loader loader;
   loader.fn = fn_copy;
+  loader.proc = proc;
   sema_init (&loader.semaphore, 0);
   tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, &loader);
+  proc->tid = tid;
 
   sema_down (&loader.semaphore);
   if (tid == TID_ERROR)
@@ -121,7 +123,6 @@ start_process (void *loader_)
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;
-  p->tid = t->tid;
 
   /* Notify process_execute(). */
   sema_up (&loader->semaphore);
