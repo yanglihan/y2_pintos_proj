@@ -20,6 +20,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Child process for parent thread's CHILDREN. This must be on
+   the parent's page, because otherwise it will be lost when the
+   child thread terminates. STATUS should be -1 at first and
+   updated in a call to exit(). */
+struct child_proc
+{
+  struct list_elem elem;      /* For the list CHILDREN in a thread. */
+  tid_t tid;                  /* Effectively PID. */
+  struct semaphore semaphore; /* Semaphore for process_wait(). */
+  int status;                 /* Exit status, default to -1. */
+  void **ref;                  /* Reference to the process pointer in thread. */
+};
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static void set_user_stack (char *file_name, char *save_path, void **esp);
@@ -60,7 +73,6 @@ process_execute (const char *file_name)
   /* Create a child process. Status is initialized to -1. */
   struct child_proc *proc = malloc (sizeof (struct child_proc));
   proc->status = -1;
-  proc->is_exit = false;
   sema_init (&proc->semaphore, 0);
   list_push_back (&thread_current ()->children, &proc->elem);
 
@@ -108,6 +120,7 @@ start_process (void *loader_)
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;
+  p->ref = &t->process;
 
   /* Notify process_execute(). */
   sema_up (&loader->semaphore);
@@ -143,10 +156,10 @@ set_user_stack (char *file_name, char *save_path, void **esp)
   void *sp;
   char *null_addr = NULL;
 
-  /* Push the file name */
+  /* Push the file name. */
   push_to_user_stack (esp, file_name, strlen (file_name) + 1);
 
-  /* Push arguments */
+  /* Push arguments. */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
       argc++;
@@ -154,11 +167,11 @@ set_user_stack (char *file_name, char *save_path, void **esp)
     }
   sp = *esp;
 
-  /* Round down the address for word-alignment */
+  /* Round down the address for word-alignment. */
   *esp = (void *)(((uint32_t)*esp >> 2) << 2);
   memset (*esp, 0, sp - *esp);
 
-  /* Push the address of arguments */
+  /* Push the address of arguments. */
   push_to_user_stack (esp, &null_addr, sizeof (char *));
   for (int i = 0; i < argc; i++)
     {
@@ -168,7 +181,7 @@ set_user_stack (char *file_name, char *save_path, void **esp)
   sp = *esp;
   push_to_user_stack (esp, &sp, sizeof (char **));
 
-  /* Push the number of arguments (argc) */
+  /* Push ARGC. */
   push_to_user_stack (esp, &argc, sizeof (int));
 
   /* Push the return address */
@@ -195,15 +208,9 @@ process_wait (tid_t child_tid)
       struct child_proc *proc = list_entry (e, struct child_proc, elem);
       if (child_tid == proc->tid)
         {
-          int status;
+          sema_down (&proc->semaphore);
+          int status = proc->status;
           list_remove (&proc->elem);
-          if (proc->is_exit)
-            status = proc->status;
-          else
-            {
-              sema_down (&proc->semaphore);
-              status = proc->status;
-            }
           free (proc);
           return status;
         }
@@ -211,12 +218,24 @@ process_wait (tid_t child_tid)
   return -1;
 }
 
-/* Frees the current process's resources. */
+/* Frees the current process's resources and releases saved child
+   processes information. */
 void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  struct list *children = &thread_current ()->children;
+
+  /* Release all remaining children information. */
+  while (!list_empty (children))
+    {
+      struct list_elem *e = list_begin (children);
+      struct child_proc *p = list_entry (e, struct child_proc, elem);
+      list_remove (e);
+      *p->ref = NULL;
+      free (p);
+    }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -257,9 +276,12 @@ process_activate (void)
 void
 process_pass_status (int status, void *process_)
 {
+  if (process_ != NULL)
+{
   struct child_proc *process = process_;
   process->status = status;
   sema_up (&process->semaphore);
+    }
 }
 
 /* We load ELF binaries.  The following definitions are taken

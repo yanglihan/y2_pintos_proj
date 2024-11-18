@@ -211,20 +211,10 @@ static void
 exit (int status)
 {
   struct thread *t = thread_current ();
-  struct list *children = &thread_current ()->children;
   struct list *files = &thread_current ()->files;
   struct list_elem *e;
 
   process_termination_msg (t->name, status);
-  
-  /* Release all remaining CHILD_PROC */
-  while (!list_empty (children))
-    {
-      e = list_begin (children);
-      struct child_proc *proc = list_entry (e, struct child_proc, elem);
-      list_remove (e);
-      free (proc);
-    }
   
   /* Close all opened files. */
   while (!list_empty (files))
@@ -236,11 +226,6 @@ exit (int status)
     }
 
   process_pass_status (status, t->process);
-  if (t->process != NULL)
-    {
-      struct child_proc *process = t->process;
-      process->is_exit = true;
-    }
   thread_exit ();
 }
 
