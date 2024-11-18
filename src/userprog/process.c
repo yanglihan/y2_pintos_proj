@@ -20,11 +20,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Random value for struct thread's `magic' member.
-   Used to detect stack overflow.  See the big comment at the top
-   of thread.h for details. */
-#define PROCESS_MAGIC 0xe3f29a7c
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 static void set_user_stack (char *file_name, char *save_path, void **esp);
@@ -34,22 +29,9 @@ static void push_to_user_stack (void **esp, void *src, size_t size);
 struct child_proc_loader
 {
   char *fn;
-  struct thread *parent;
   struct semaphore semaphore;
   struct child_proc *proc;
-};
-
-/* Child process for parent thread's CHILDREN. This must be on
-   the parent's page, because otherwise it will be lost when the
-   child thread terminates. STATUS should be -1 at first and
-   updated in a call to exit(). */
-struct child_proc
-{
-  struct list_elem elem;
-  tid_t tid;
-  struct semaphore semaphore;
-  int status;
-  unsigned magic;
+  bool success;
 };
 
 /* Starts a new thread running a user program loaded from
@@ -69,7 +51,7 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
-  /* Extract file_name */
+  /* Extract FILE_NAME. */
   char extracted_fn[NAME_MAX + 1];
   char *tmp;
   strlcpy (extracted_fn, file_name, NAME_MAX + 1);
@@ -78,15 +60,15 @@ process_execute (const char *file_name)
   /* Create a child process. Status is initialized to -1. */
   struct child_proc *proc = malloc (sizeof (struct child_proc));
   proc->status = -1;
+  proc->is_exit = false;
   sema_init (&proc->semaphore, 0);
-  proc->magic = PROCESS_MAGIC;
   list_push_back (&thread_current ()->children, &proc->elem);
 
   /* Create a new thread to execute FILE_NAME. */
   struct child_proc_loader loader;
   loader.fn = fn_copy;
   loader.proc = proc;
-  loader.parent = thread_current ();
+  loader.success = false;
   sema_init (&loader.semaphore, 0);
   tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, &loader);
   proc->tid = tid;
@@ -94,6 +76,8 @@ process_execute (const char *file_name)
   sema_down (&loader.semaphore);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
+  if (!loader.success)
+      tid = TID_ERROR;
   return tid;
 }
 
@@ -109,7 +93,6 @@ start_process (void *loader_)
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
-  bool success;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -117,11 +100,10 @@ start_process (void *loader_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  /* Separate file name from argument */
+  /* Separate file name from argument. */
   extracted_fn = strtok_r (file_name, " ", &save_path);
-  success = load (extracted_fn, &if_.eip, &if_.esp);
-  loader->parent->is_load = success;
-  if (success)
+  loader->success = load (extracted_fn, &if_.eip, &if_.esp);
+  if (loader->success)
     set_user_stack (extracted_fn, save_path, &if_.esp);
 
   /* Link the thread's corresponding child_proc. */
@@ -132,7 +114,7 @@ start_process (void *loader_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success)
+  if (!loader->success)
     thread_exit ();
 
   /* Start the user process by simulating a return from an
@@ -214,9 +196,14 @@ process_wait (tid_t child_tid)
       if (child_tid == proc->tid)
         {
           int status;
-          sema_down (&proc->semaphore);
-          status = proc->status;
           list_remove (&proc->elem);
+          if (proc->is_exit)
+            status = proc->status;
+          else
+            {
+              sema_down (&proc->semaphore);
+              status = proc->status;
+            }
           free (proc);
           return status;
         }
@@ -224,7 +211,7 @@ process_wait (tid_t child_tid)
   return -1;
 }
 
-/* Free the current process's resources. */
+/* Frees the current process's resources. */
 void
 process_exit (void)
 {
@@ -271,11 +258,8 @@ void
 process_pass_status (int status, void *process_)
 {
   struct child_proc *process = process_;
-  if (process->magic == PROCESS_MAGIC)
-    {
-      process->status = status;
-      sema_up (&process->semaphore);
-    }
+  process->status = status;
+  sema_up (&process->semaphore);
 }
 
 /* We load ELF binaries.  The following definitions are taken

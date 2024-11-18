@@ -6,7 +6,6 @@
 #include "filesys/filesys.h"
 #include "threads/interrupt.h"
 #include "threads/malloc.h"
-#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
@@ -62,7 +61,7 @@ process_termination_msg (char *name, int code)
 static struct user_file *
 find_user_file (int fd)
 { 
-  struct list *files = &(thread_current ()->files);
+  struct list *files = &thread_current ()->files;
   struct list_elem *e;
   for (e = list_begin (files); e != list_end (files);
        e = list_next (e))
@@ -212,10 +211,36 @@ static void
 exit (int status)
 {
   struct thread *t = thread_current ();
+  struct list *children = &thread_current ()->children;
+  struct list *files = &thread_current ()->files;
+  struct list_elem *e;
 
   process_termination_msg (t->name, status);
+  
+  /* Release all remaining CHILD_PROC */
+  while (!list_empty (children))
+    {
+      e = list_begin (children);
+      struct child_proc *proc = list_entry (e, struct child_proc, elem);
+      list_remove (e);
+      free (proc);
+    }
+  
+  /* Close all opened files. */
+  while (!list_empty (files))
+    {
+      e = list_begin (files);
+      struct user_file *file = list_entry (e, struct user_file, elem);
+      list_remove (e);
+      free (file);
+    }
 
   process_pass_status (status, t->process);
+  if (t->process != NULL)
+    {
+      struct child_proc *process = t->process;
+      process->is_exit = true;
+    }
   thread_exit ();
 }
 
@@ -377,7 +402,6 @@ close (int fd)
   lock_release (&filesys_lock);
 
   list_remove (&file->elem);
-
   free (file);
 }
 
@@ -388,12 +412,10 @@ exec (const char *file)
   if (!is_str_mem_valid (file, PGSIZE))
     exit (-1);
   tid_t tid = process_execute (file);
-  if (!thread_current ()->is_load)
-    return -1;
   return tid;
 }
 
-/* Wait for a process*/
+/* Waits for a process. */
 static int
 wait (pid_t pid)
 {

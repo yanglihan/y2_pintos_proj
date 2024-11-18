@@ -710,6 +710,7 @@ init_thread (struct thread *t, const char *name, int priority,
 
 #ifdef USERPROG
   t->next_fd = 2; /* Skips STDIN and STDOUT. */
+  t->process = NULL;
   list_init (&t->files);
   list_init (&t->children);
 #endif
