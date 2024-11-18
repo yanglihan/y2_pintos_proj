@@ -34,6 +34,7 @@ static void push_to_user_stack (void **esp, void *src, size_t size);
 struct child_proc_loader
 {
   char *fn;
+  struct thread *parent;
   struct semaphore semaphore;
   struct child_proc *proc;
 };
@@ -85,6 +86,7 @@ process_execute (const char *file_name)
   struct child_proc_loader loader;
   loader.fn = fn_copy;
   loader.proc = proc;
+  loader.parent = thread_current ();
   sema_init (&loader.semaphore, 0);
   tid = thread_create (extracted_fn, PRI_DEFAULT, start_process, &loader);
   proc->tid = tid;
@@ -117,9 +119,10 @@ start_process (void *loader_)
 
   /* Separate file name from argument */
   extracted_fn = strtok_r (file_name, " ", &save_path);
-
   success = load (extracted_fn, &if_.eip, &if_.esp);
-  set_user_stack (extracted_fn, save_path, &if_.esp);
+  loader->parent->is_load = success;
+  if (success)
+    set_user_stack (extracted_fn, save_path, &if_.esp);
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;

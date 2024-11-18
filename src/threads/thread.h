@@ -108,6 +108,8 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     void *process;                      /* For passing data to parent. */
     struct list children;               /* Child threads. */
+    bool is_load;                       /* Whether the recent child 
+                                           process is load */
 #endif
 
     /* Owned by thread.c. */

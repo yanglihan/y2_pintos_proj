@@ -398,7 +398,11 @@ close (int fd)
 static pid_t
 exec (const char *file)
 {
+  if (!is_str_mem_valid (file, PGSIZE))
+    exit (-1);
   tid_t tid = process_execute (file);
+  if (!thread_current ()->is_load)
+    return -1;
   return tid;
 }
 
