@@ -221,12 +221,19 @@ exit (int status)
     {
       e = list_begin (files);
       struct user_file *file = list_entry (e, struct user_file, elem);
+      file_close (file->file);
       list_remove (e);
       free (file);
     }
 
   process_pass_status (status, t->process);
   thread_exit ();
+}
+
+void 
+exception_exit (void)
+{
+  exit (-1);
 }
 
 /* Creates a file. */
