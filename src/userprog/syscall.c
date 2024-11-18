@@ -41,9 +41,6 @@ static bool is_str_mem_valid (const char *ptr, size_t size);
 
 struct list open_files;          /* List of all opened files. */
 static struct lock filesys_lock; /* Lock for the file system. */
-static struct lock file_lock;    /* Lock for OPEN_FILES. */
-static int cur_fd = 2;           /* Current file descriptor. Skips STDIN and
-                                   STDOUT. */
 
 /* A file opened by a user program. */
 struct user_file
@@ -60,24 +57,20 @@ process_termination_msg (char *name, int code)
   printf ("%s: exit(%d)\n", name, code);
 }
 
-/* Finds the file with given file descriptor in OPEN_FILES. Returns NULL if the
-  file was not found. */
+/* Finds the file with given file descriptor in current thread's opened files. 
+   Returns NULL if the file was not found. */
 static struct user_file *
 find_user_file (int fd)
-{
-  lock_acquire (&file_lock);
+{ 
+  struct list *files = &(thread_current ()->files);
   struct list_elem *e;
-  for (e = list_begin (&open_files); e != list_end (&open_files);
+  for (e = list_begin (files); e != list_end (files);
        e = list_next (e))
     {
       struct user_file *file = list_entry (e, struct user_file, elem);
       if (file->fd == fd)
-        {
-          lock_release (&file_lock);
-          return file;
-        }
+        return file;
     }
-  lock_release (&file_lock);
   return NULL;
 }
 
@@ -119,9 +112,7 @@ void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init (&file_lock);
   lock_init (&filesys_lock);
-  list_init (&open_files);
 }
 
 /* Handles a system call. */
@@ -283,11 +274,9 @@ open (const char *file)
 
   /* Generate a new file descriptor and add the file to OPEN_FILES. */
   struct user_file *new_file = calloc (1, sizeof (struct user_file));
-  lock_acquire (&file_lock);
-  new_file->fd = cur_fd++;
+  new_file->fd = thread_current ()->next_fd++;
   new_file->file = ret_file;
-  list_push_front (&open_files, &new_file->elem);
-  lock_release (&file_lock);
+  list_push_front (&thread_current ()->files, &new_file->elem);
 
   return new_file->fd;
 }
@@ -387,9 +376,7 @@ close (int fd)
   file_close (file->file);
   lock_release (&filesys_lock);
 
-  lock_acquire (&file_lock);
   list_remove (&file->elem);
-  lock_release (&file_lock);
 
   free (file);
 }

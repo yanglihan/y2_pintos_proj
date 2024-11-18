@@ -110,8 +110,9 @@ struct thread
     struct list children;               /* Child threads. */
     bool is_load;                       /* Whether the recent child 
                                            process is load */
+    int next_fd;                         /* Next file descriptor */
+    struct list files;                  /* List of opened files*/
 #endif
-
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
