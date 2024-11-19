@@ -240,8 +240,9 @@ process_exit (void)
   uint32_t *pd;
   struct list *children = &thread_current ()->children;
 
-  /* file_allow_write, the file_close will check null conditions. */
-  file_close (t->exec_file);
+  /* Close the running executable file. NULL check and allow write
+     already performed by file_close(). */
+  file_close (cur->exec_file);
 
   /* Release all remaining children information. */
   while (!list_empty (children))
