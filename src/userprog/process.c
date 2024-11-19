@@ -227,6 +227,10 @@ process_exit (void)
   uint32_t *pd;
   struct list *children = &thread_current ()->children;
 
+  /* Close the running executable file. NULL check and allow write
+     already performed by file_close(). */
+  file_close (cur->exec_file);
+
   /* Release all remaining children information. */
   while (!list_empty (children))
     {
@@ -465,8 +469,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* We arrive here whether the load is successful or not. 
+     The file is kept open during the lifespan of the thread. */
+  t->exec_file = file;
   return success;
 }
 
