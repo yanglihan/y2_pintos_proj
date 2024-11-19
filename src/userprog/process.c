@@ -13,6 +13,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -35,7 +36,7 @@ struct child_proc
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void set_user_stack (char *file_name, char *save_path, void **esp);
+static bool set_user_stack (char *file_name, char *save_path, void **esp);
 static void push_to_user_stack (void **esp, void *src, size_t size);
 
 /* Argument package for start_process(). */
@@ -105,6 +106,7 @@ start_process (void *loader_)
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
+  bool is_set = true;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -116,7 +118,7 @@ start_process (void *loader_)
   extracted_fn = strtok_r (file_name, " ", &save_path);
   loader->success = load (extracted_fn, &if_.eip, &if_.esp);
   if (loader->success)
-    set_user_stack (extracted_fn, save_path, &if_.esp);
+    is_set = set_user_stack (extracted_fn, save_path, &if_.esp);
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;
@@ -124,6 +126,9 @@ start_process (void *loader_)
 
   /* Notify process_execute(). */
   sema_up (&loader->semaphore);
+
+  if (!is_set)
+    exception_exit ();
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -148,12 +153,13 @@ push_to_user_stack (void **esp, void *src, size_t size)
   memcpy (*esp, src, size);
 }
 /* Tokenizes FILE_NAME and push arguments to the user stack. */
-static void
+static bool
 set_user_stack (char *file_name, char *save_path, void **esp)
 {
   char *token;
   int argc = 1;
   void *sp;
+  void *base = *esp;
   char *null_addr = NULL;
 
   /* Push the file name. */
@@ -162,8 +168,13 @@ set_user_stack (char *file_name, char *save_path, void **esp)
   /* Push arguments. */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
-      argc++;
+      sp = *esp - strlen (token) - 1;
+      sp = (void *)(((uint32_t)sp >> 2) << 2);
+      sp = sp - (argc + 5) * sizeof (void *);
+      if (base - sp >= PGSIZE)
+          return false;
       push_to_user_stack (esp, token, strlen (token) + 1);
+      argc++;
     }
   sp = *esp;
 
@@ -186,6 +197,8 @@ set_user_stack (char *file_name, char *save_path, void **esp)
 
   /* Push the return address */
   push_to_user_stack (esp, &null_addr, sizeof (void *));
+
+  return true;
 }
 
 /* Waits for thread TID to die and returns its exit status.
@@ -223,9 +236,12 @@ process_wait (tid_t child_tid)
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *t = thread_current ();
   uint32_t *pd;
   struct list *children = &thread_current ()->children;
+
+  /* file_allow_write, the file_close will check null conditions. */
+  file_close (t->exec_file);
 
   /* Release all remaining children information. */
   while (!list_empty (children))
@@ -239,17 +255,17 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  pd = cur->pagedir;
+  pd = t->pagedir;
   if (pd != NULL)
     {
       /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
+         t->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-      cur->pagedir = NULL;
+      t->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
@@ -381,6 +397,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
   
+  t->exec_file = file;
   file_deny_write (file);
 
   /* Read and verify executable header. */
@@ -466,7 +483,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 

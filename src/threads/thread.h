@@ -108,8 +108,9 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     void *process;                      /* For passing data to parent. */
     struct list children;               /* Child threads. */
-    int next_fd;                         /* Next file descriptor */
+    int next_fd;                        /* Next file descriptor */
     struct list files;                  /* List of opened files*/
+    struct file *exec_file;             /* Executable file of the running process. */
 #endif
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
