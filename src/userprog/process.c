@@ -168,13 +168,17 @@ set_user_stack (char *file_name, char *save_path, void **esp)
   /* Push arguments. */
   while ((token = strtok_r (NULL, " ", &save_path)) != NULL)
     {
+      argc++;
+
+      /* Check if stack exceeds page limit after pushing.
+         Includev 4 extras - RETADDR, ARGC, ARGV and NULL pointer. */
       sp = *esp - strlen (token) - 1;
       sp = (void *)(((uint32_t)sp >> 2) << 2);
-      sp = sp - (argc + 5) * sizeof (void *);
+      sp = sp - (argc + 4) * sizeof (void *);
       if (base - sp >= PGSIZE)
-          return false;
+        return false;
+
       push_to_user_stack (esp, token, strlen (token) + 1);
-      argc++;
     }
   sp = *esp;
 
@@ -242,7 +246,7 @@ process_exit (void)
 
   /* Close the running executable file. NULL check and allow write
      already performed by file_close(). */
-  file_close (cur->exec_file);
+  file_close (t->exec_file);
 
   /* Release all remaining children information. */
   while (!list_empty (children))
