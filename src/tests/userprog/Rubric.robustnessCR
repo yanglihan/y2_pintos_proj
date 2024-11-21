@@ -3,3 +3,7 @@ Full robustness of argument passing code:
 5	exec-over-arg
 5	exec-over-args
 
+Full robustess of syscall handling code:
+- Test syscall buffer validity checks.
+5	read-bad-buf
+5	write-bad-buf
