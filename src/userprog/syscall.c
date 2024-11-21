@@ -303,7 +303,7 @@ open (const char *file)
 static int
 read (int fd, void *buffer, unsigned size)
 {
-  if (!is_str_mem_valid (buffer, size))
+  if (!is_mem_valid (buffer, size))
     exit (-1);
   if (fd == STDIN_FILENO)
     {
@@ -331,7 +331,7 @@ read (int fd, void *buffer, unsigned size)
 static int
 write (int fd, const void *buffer, unsigned size)
 {
-  if (!is_str_mem_valid (buffer, size))
+  if (!is_mem_valid (buffer, size))
     exit (-1);
   if (fd == STDOUT_FILENO)
     {
