@@ -78,33 +78,37 @@ static bool
 is_mem_valid (const void *ptr, size_t size)
 {
   uint32_t *pd = thread_current ()->pagedir;
-  return (ptr != NULL) && (is_user_vaddr (ptr))
-         && (pagedir_get_page (pd, ptr) != NULL)
-         && (is_user_vaddr (ptr + size - 1))
-         && (pagedir_get_page (pd, ptr + size - 1) != NULL);
+  if ((ptr == NULL) || !is_user_vaddr (ptr)
+      || pagedir_get_page (pd, ptr) == NULL)
+    return false;
+  
+  void *pg_start = pg_round_down (ptr) + PGSIZE;
+  while (pg_start < ptr + size)
+    {
+      if (!is_user_vaddr (pg_start) || pagedir_get_page (pd, pg_start) == NULL)
+        return false;
+      pg_start += PGSIZE;
+    }
+  return true;
 }
 
 /* Returns if the string at most of size SIZE is valid at PTR. This function
-   uses a loop and should be used sparingly.*/
+   uses a loop and should be used sparingly.
+   Assume that size SIZE is smaller then PGSIZE */
 static bool
 is_str_mem_valid (const char *ptr, size_t size)
 {
   uint32_t *pd = thread_current ()->pagedir;
-  if (ptr == NULL)
+  const char *p;
+  if ((ptr == NULL) || !is_user_vaddr (ptr)
+      || pagedir_get_page (pd, ptr) == NULL)
     return false;
-  for (const char *p = ptr; p < ptr + size; p++)
+  for (p = ptr; p < ptr + size; p++)
     {
-      if (is_user_vaddr (p) && (pagedir_get_page (pd, p) != NULL))
-        {
-          if (*p == '\0')
-            return true;
-        }
-      else
-        {
-          return false;
-        }
+      if (*p == '\0')
+        return is_user_vaddr (p) && (pagedir_get_page (pd, p) != NULL);
     }
-  return true;
+  return is_user_vaddr (p) && (pagedir_get_page (pd, p) != NULL);
 }
 
 void
