@@ -123,7 +123,7 @@ static void
 syscall_handler (struct intr_frame *f)
 {
   if (!is_mem_valid (f->esp, 4))
-    exit (-1);
+    erroneous_exit ();
   int syscall_num = *((int *)f->esp);
   void *param1 = f->esp + 4;
   void *param2 = f->esp + 8;
@@ -138,68 +138,68 @@ syscall_handler (struct intr_frame *f)
       break;
     case SYS_EXIT:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       exit (*((int *)param1));
       break;
     case SYS_CREATE:
       if (!is_mem_valid (f->esp, 12))
-        exit (-1);
+        erroneous_exit ();
       *retval = create (*((char **)param1), *((unsigned *)param2));
       break;
     case SYS_REMOVE:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = remove (*((char **)param1));
       break;
     case SYS_FILESIZE:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = filesize (*((int *)param1));
       break;
     case SYS_OPEN:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = open (*((char **)param1));
       break;
     case SYS_READ:
       if (!is_mem_valid (f->esp, 16))
-        exit (-1);
+        erroneous_exit ();
       *retval
           = read (*((int *)param1), *((void **)param2), *((unsigned *)param3));
       break;
     case SYS_WRITE:
       if (!is_mem_valid (f->esp, 16))
-        exit (-1);
+        erroneous_exit ();
       *retval = write (*((int *)param1), *((void **)param2),
                        *((unsigned *)param3));
       break;
     case SYS_CLOSE:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       close (*((int *)param1));
       break;
     case SYS_TELL:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = tell (*((int *)param1));
       break;
     case SYS_SEEK:
       if (!is_mem_valid (f->esp, 16))
-        exit (-1);
+        erroneous_exit ();
       seek (*((int *)param1), *((unsigned *)param2));
       break;
     case SYS_EXEC:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = exec (*((char **)param1));
       break;
     case SYS_WAIT:
       if (!is_mem_valid (f->esp, 8))
-        exit (-1);
+        erroneous_exit ();
       *retval = wait (*(int *)param1);
       break;
     default:
-      exit (-1);
+      erroneous_exit ();
     }
 }
 
@@ -235,7 +235,7 @@ exit (int status)
 }
 
 void 
-exception_exit (void)
+erroneous_exit (void)
 {
   exit (-1);
 }
@@ -245,7 +245,7 @@ static bool
 create (const char *file, unsigned initial_size)
 {
   if (!is_str_mem_valid (file, sizeof (char) * 16))
-    exit (-1);
+    erroneous_exit ();
 
   lock_acquire (&filesys_lock);
   bool is_created = filesys_create (file, initial_size);
@@ -258,7 +258,7 @@ static bool
 remove (const char *file)
 {
   if (!is_str_mem_valid (file, sizeof (char) * 16))
-    exit (-1);
+    erroneous_exit ();
 
   lock_acquire (&filesys_lock);
   bool is_removed = filesys_remove (file);
@@ -284,7 +284,7 @@ static int
 open (const char *file)
 {
   if (!is_str_mem_valid (file, sizeof (char) * 16))
-    exit (-1);
+    erroneous_exit ();
 
   lock_acquire (&filesys_lock);
   struct file *ret_file = filesys_open (file);
@@ -308,7 +308,7 @@ static int
 read (int fd, void *buffer, unsigned size)
 {
   if (!is_mem_valid (buffer, size))
-    exit (-1);
+    erroneous_exit ();
   if (fd == STDIN_FILENO)
     {
       /* Read from STDIN. Always reads the full size. */
@@ -336,7 +336,7 @@ static int
 write (int fd, const void *buffer, unsigned size)
 {
   if (!is_mem_valid (buffer, size))
-    exit (-1);
+    erroneous_exit ();
   if (fd == STDOUT_FILENO)
     {
       /* Write to STDOUT. Always writes the full size. */
@@ -406,7 +406,7 @@ static pid_t
 exec (const char *file)
 {
   if (!is_str_mem_valid (file, PGSIZE))
-    exit (-1);
+    erroneous_exit ();
   tid_t tid = process_execute (file);
   return tid;
 }

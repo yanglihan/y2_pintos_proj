@@ -128,7 +128,7 @@ start_process (void *loader_)
   sema_up (&loader->semaphore);
 
   if (!is_set)
-    exception_exit ();
+    thread_exit ();
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
