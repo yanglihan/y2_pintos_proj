@@ -31,7 +31,7 @@ struct child_proc
   tid_t tid;                  /* Effectively PID. */
   struct semaphore semaphore; /* Semaphore for process_wait(). */
   int status;                 /* Exit status, default to -1. */
-  void **ref;                  /* Reference to the process pointer in thread. */
+  void **ref;                 /* Reference to the process pointer in thread. */
 };
 
 static thread_func start_process NO_RETURN;
@@ -247,7 +247,7 @@ process_exit (void)
   struct list_elem *e;
   struct list *children = &thread_current ()->children;
   struct list *files = &thread_current ()->files;
-  struct child_proc * process = t->process;
+  struct child_proc *process = t->process;
 
   /* Close the running executable file. NULL check and allow write
      already performed by file_close(). */
@@ -269,16 +269,24 @@ process_exit (void)
       e = list_begin (children);
       struct child_proc *p = list_entry (e, struct child_proc, elem);
       list_remove (e);
-      *p->ref = NULL;
+      if (p->ref != NULL)
+        {
+          *p->ref = NULL;
+        }
       free (p);
     }
 
-  /* Print process exit message. */
   if (process != NULL)
-    printf ("%s: exit(%d)\n", t->name, process->status);
-  
-  /* Inform parent to retrieve exit status. */
-  sema_up(&process->semaphore);
+    {
+      /* Print process exit message. */
+      printf ("%s: exit(%d)\n", t->name, process->status);
+
+      /* Inform parent to retrieve exit status. */
+      sema_up (process->semaphore);
+
+      /* Prevent parent removing process reference. */
+      process->ref = NULL;
+    }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
