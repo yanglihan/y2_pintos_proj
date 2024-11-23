@@ -117,7 +117,7 @@ start_process (void *loader_)
   extracted_fn = strtok_r (file_name, " ", &save_path);
   loader->success = load (extracted_fn, &if_.eip, &if_.esp);
   if (loader->success)
-    loader->success &= (set_user_stack (extracted_fn, save_path, &if_.esp));
+    loader->success = (set_user_stack (extracted_fn, save_path, &if_.esp));
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;
@@ -166,15 +166,21 @@ set_user_stack (char *file_name, char *save_path, void **esp)
     {
       argc++;
 
+      /* The PintOS implementation of strtok_r() saves the pointer
+         to the final char to SAVE_PTR when reaching the end of
+         string. We add the additional 1 (which is !*save_path) in
+         this case to get token length. */
+      size_t len = (size_t)(save_path - token) + !*save_path;
+
       /* Check if stack exceeds page limit after pushing.
          Includev 4 extras - RETADDR, ARGC, ARGV and NULL pointer. */
-      sp = *esp - strlen (token) - 1;
+      sp = *esp - len;
       sp = (void *)(((uint32_t)sp >> 2) << 2);
       sp = sp - (argc + 4) * sizeof (void *);
       if (base - sp >= PGSIZE)
         return false;
 
-      push_to_user_stack (esp, token, strlen (token) + 1);
+      push_to_user_stack (esp, token, len);
     }
   sp = *esp;
 
