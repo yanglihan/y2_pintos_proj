@@ -106,7 +106,6 @@ start_process (void *loader_)
   char *save_path;
   char *extracted_fn;
   struct intr_frame if_;
-  bool is_set = true;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -118,7 +117,7 @@ start_process (void *loader_)
   extracted_fn = strtok_r (file_name, " ", &save_path);
   loader->success = load (extracted_fn, &if_.eip, &if_.esp);
   if (loader->success)
-    is_set = set_user_stack (extracted_fn, save_path, &if_.esp);
+    loader->success &= (set_user_stack (extracted_fn, save_path, &if_.esp));
 
   /* Link the thread's corresponding child_proc. */
   t->process = p;
@@ -126,9 +125,6 @@ start_process (void *loader_)
 
   /* Notify process_execute(). */
   sema_up (&loader->semaphore);
-
-  if (!is_set)
-    erroneous_exit ();
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -242,21 +238,41 @@ process_exit (void)
 {
   struct thread *t = thread_current ();
   uint32_t *pd;
+  struct list_elem *e;
   struct list *children = &thread_current ()->children;
+  struct list *files = &thread_current ()->files;
+  struct child_proc * process = t->process;
 
   /* Close the running executable file. NULL check and allow write
      already performed by file_close(). */
   file_close (t->exec_file);
 
+  /* Close all opened files. */
+  while (!list_empty (files))
+    {
+      e = list_begin (files);
+      struct user_file *file = list_entry (e, struct user_file, elem);
+      file_close (file->file);
+      list_remove (e);
+      free (file);
+    }
+
   /* Release all remaining children information. */
   while (!list_empty (children))
     {
-      struct list_elem *e = list_begin (children);
+      e = list_begin (children);
       struct child_proc *p = list_entry (e, struct child_proc, elem);
       list_remove (e);
       *p->ref = NULL;
       free (p);
     }
+
+  /* Print process exit message. */
+  if (process != NULL)
+    printf ("%s: exit(%d)\n", t->name, process->status);
+  
+  /* Inform parent to retrieve exit status. */
+  sema_up(&process->semaphore);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -298,11 +314,10 @@ void
 process_pass_status (int status, void *process_)
 {
   if (process_ != NULL)
-{
-  struct child_proc *process = process_;
-  process->status = status;
-  sema_up (&process->semaphore);
-    }
+  {
+    struct child_proc *process = process_;
+    process->status = status;
+  }
 }
 
 /* We load ELF binaries.  The following definitions are taken

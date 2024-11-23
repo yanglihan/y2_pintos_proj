@@ -10,4 +10,12 @@ void process_exit (void);
 void process_activate (void);
 void process_pass_status (int, void *);
 
+/* A file opened by a user program. */
+struct user_file
+{
+  int fd;
+  struct file *file;
+  struct list_elem elem;
+};
+
 #endif /* userprog/process.h */
