@@ -281,11 +281,11 @@ process_exit (void)
       /* Print process exit message. */
       printf ("%s: exit(%d)\n", t->name, process->status);
 
-      /* Inform parent to retrieve exit status. */
-      sema_up (process->semaphore);
-
       /* Prevent parent removing process reference. */
       process->ref = NULL;
+
+      /* Inform parent to retrieve exit status. */
+      sema_up (&process->semaphore);
     }
 
   /* Destroy the current process's page directory and switch back
